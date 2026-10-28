@@ -28,7 +28,7 @@ On first launch, Mindsphere creates a small demo sphere called “Thinking it th
 
 ### Browser build
 
-The GitHub Pages build runs the same project through Godot's Web export. Browser spheres are stored in the site's `localStorage`; nothing is uploaded. Use **Export** to download a sphere as JSON, and drag a `.json` sphere file onto the window to import it. The web build does not use the desktop file dialogs.
+The GitHub Pages build runs the same project through Godot's Web export. Browser spheres are stored in the site's `localStorage`; nothing is uploaded. Use **Export** to download a sphere as JSON. **Import** opens a browser dialog where you can choose a `.json` file or paste exported JSON; you can also drag a `.json` sphere file onto the window. The web build does not use the desktop file dialogs.
 
 To build and serve it locally:
 

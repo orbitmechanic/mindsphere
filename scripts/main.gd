@@ -50,6 +50,7 @@ var _link_option: OptionButton
 var _save_timer: Timer
 var _export_dialog: FileDialog
 var _import_dialog: FileDialog
+var _web_import_callback
 var _empty_panel: PanelContainer
 var _empty_button: Button
 
@@ -83,6 +84,7 @@ func _ready() -> void:
 	_build_ui()
 	_build_file_dialogs()
 	_build_timers()
+	_setup_web_import()
 	get_window().files_dropped.connect(_on_files_dropped)
 
 	SphereStore.ensure_library()
@@ -1197,40 +1199,26 @@ func _on_files_dropped(files: PackedStringArray) -> void:
 	_toast("Drop a .json sphere file to import it.", UiFactory.AMBER)
 
 
+func _setup_web_import() -> void:
+	if not OS.has_feature("web"):
+		return
+	_web_import_callback = JavaScriptBridge.create_callback(_on_web_import_text)
+	var window := JavaScriptBridge.get_interface("window")
+	window.mindsphereReceiveImport = _web_import_callback
+	JavaScriptBridge.eval(WebImportBridge.JAVASCRIPT, true)
+
+
+func _on_web_import_text(args: Array) -> void:
+	if args.is_empty():
+		return
+	_finish_import(SphereStore.import_sphere_text(String(args[0])))
+
+
 func _show_web_import_modal() -> void:
-	_prepare_modal()
-	var panel := _modal_panel(560)
-	var box := VBoxContainer.new()
-	box.add_theme_constant_override("separation", 12)
-	panel.add_child(box)
-	box.add_child(UiFactory.kicker("IMPORT", UiFactory.ACCENT))
-	box.add_child(UiFactory.label("Bring in a sphere", 22, UiFactory.TEXT))
-	var hint := UiFactory.label("Drag a .json sphere anywhere onto the window, or paste its exported JSON below.", 13, UiFactory.MUTED)
-	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	box.add_child(hint)
-	var edit := UiFactory.text_edit("Paste exported sphere JSON...")
-	edit.custom_minimum_size.y = 190
-	box.add_child(edit)
-	var actions := HBoxContainer.new()
-	actions.add_theme_constant_override("separation", 8)
-	box.add_child(actions)
-	var flex := Control.new()
-	flex.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	actions.add_child(flex)
-	var cancel := UiFactory.ghost_button("Cancel", false)
-	cancel.pressed.connect(_close_modal)
-	actions.add_child(cancel)
-	var submit := UiFactory.button("Import sphere", true)
-	submit.pressed.connect(func() -> void:
-		var text := edit.text.strip_edges()
-		if text.is_empty():
-			_toast("Paste a sphere JSON file first.", UiFactory.AMBER)
-			return
-		_close_modal()
-		_finish_import(SphereStore.import_sphere_text(text))
-	)
-	actions.add_child(submit)
-	edit.call_deferred("grab_focus")
+	if JavaScriptBridge.eval("typeof window.mindsphereOpenImport === 'function'", true):
+		JavaScriptBridge.eval("window.mindsphereOpenImport()", true)
+	else:
+		_toast("Import is not available in this browser. Reload and try again.", UiFactory.CORAL)
 
 
 func _finish_import(imported: Dictionary) -> void:
