@@ -16,7 +16,7 @@ use bevy::prelude::*;
 use bevy::ui_widgets::Activate;
 use bevy::window::{MonitorSelection, WindowMode, WindowResolution};
 
-use actions::{autosave, handle_actions, keyboard_shortcuts, poll_web_import};
+use actions::{autosave, handle_actions, keyboard_shortcuts, poll_web_import, update_cursor};
 use forces::{ForceState, simulate};
 use scene::{
     DragState, SceneMap, camera_controls, draw_globe, setup_scene, sync_globe, sync_scene,
@@ -25,10 +25,11 @@ use scene::{
 use state::{ActionMessage, AppState, WebImportState};
 use ui::{
     ActionButton, BoardDragState, NodeLabelMap, board_release_drop, ensure_ui_pickable,
-    globe_sliders, ignore_text_picking, rebuild_board, rebuild_inspector, rebuild_modal,
-    rebuild_sphere_list, scroll_lists, setup_ui, style_buttons, style_inputs, sync_editor,
-    sync_modal_blocking, sync_modal_input, sync_node_labels, sync_search, sync_slider_value,
-    update_globe_slider_visuals, update_globe_value_labels, update_modes, update_save_indicator,
+    globe_sliders, ignore_text_picking, rebuild_board, rebuild_globe_panel, rebuild_inspector,
+    rebuild_modal, rebuild_sphere_list, scroll_lists, setup_ui, style_buttons, style_inputs,
+    sync_editor, sync_modal_blocking, sync_modal_input, sync_node_labels, sync_search,
+    sync_slider_value, update_action_buttons, update_console, update_globe_slider_visuals,
+    update_globe_value_labels, update_link_button, update_modes, update_save_indicator,
     update_stats, update_toast, update_top_labels,
 };
 
@@ -73,6 +74,7 @@ fn main() {
         .add_observer(on_activate)
         .add_observer(sync_slider_value)
         .add_systems(Startup, (setup_scene, setup_ui).chain())
+        .add_systems(Update, update_link_button.after(style_buttons))
         .add_systems(FixedUpdate, simulate)
         .add_systems(
             Update,
@@ -93,6 +95,7 @@ fn main() {
                 rebuild_sphere_list,
                 rebuild_inspector,
                 rebuild_board,
+                rebuild_globe_panel,
                 rebuild_modal,
                 camera_controls,
                 update_camera,
@@ -111,6 +114,7 @@ fn main() {
                 globe_sliders,
                 update_globe_slider_visuals,
                 update_globe_value_labels,
+                update_action_buttons,
                 style_buttons,
                 style_inputs,
                 sync_modal_blocking,
@@ -118,6 +122,8 @@ fn main() {
                 update_save_indicator,
                 update_stats,
                 update_modes,
+                update_console,
+                update_cursor,
                 update_toast,
                 autosave,
                 scroll_lists,

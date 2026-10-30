@@ -83,6 +83,12 @@ pub struct BoardDragState {
 pub struct InspectorRoot;
 
 #[derive(Component)]
+pub struct GlobePanelRoot;
+
+#[derive(Component)]
+pub struct GlobePanelScroll;
+
+#[derive(Component)]
 pub struct ModalRoot;
 
 #[derive(Component)]
@@ -120,6 +126,27 @@ pub struct SaveDot;
 
 #[derive(Component)]
 pub struct ModeButton(pub ViewMode);
+
+#[derive(Component)]
+pub struct NewThoughtButton;
+
+#[derive(Component)]
+pub struct AddGroupButton;
+
+#[derive(Component)]
+pub struct RemoveGroupButton;
+
+#[derive(Component)]
+pub struct LinkButton;
+
+#[derive(Component)]
+pub struct MultiButton;
+
+#[derive(Component)]
+pub struct ConsoleLine1;
+
+#[derive(Component)]
+pub struct ConsoleLine2;
 
 #[derive(Component, Clone, Copy)]
 pub enum StatKind {
@@ -217,7 +244,9 @@ pub fn setup_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
             spawn_left_panel(root, &fonts);
             spawn_top_bar(root, &fonts);
             spawn_right_panel(root, &fonts);
+            spawn_globe_panel(root);
             spawn_bottom_dock(root, &fonts);
+            spawn_console(root, &fonts);
             spawn_toast(root, &fonts);
             spawn_modal(root, &fonts);
         });
@@ -511,7 +540,7 @@ fn spawn_top_bar(root: &mut ChildSpawnerCommands, fonts: &UiAssets) {
             ));
         });
 
-        spawn_button(
+        let new_thought = spawn_button(
             bar,
             fonts,
             "+ New thought",
@@ -520,6 +549,29 @@ fn spawn_top_bar(root: &mut ChildSpawnerCommands, fonts: &UiAssets) {
             Some(136.0),
             38.0,
         );
+        bar.commands().entity(new_thought).insert(NewThoughtButton);
+        let add_group = spawn_button(
+            bar,
+            fonts,
+            "Add to group",
+            ButtonKind::Primary,
+            AppAction::AddSelectedToGroup,
+            Some(132.0),
+            38.0,
+        );
+        bar.commands().entity(add_group).insert(AddGroupButton);
+        let remove_group = spawn_button(
+            bar,
+            fonts,
+            "Remove group",
+            ButtonKind::Ghost,
+            AppAction::RemoveSelectedFromGroup,
+            Some(132.0),
+            38.0,
+        );
+        bar.commands()
+            .entity(remove_group)
+            .insert(RemoveGroupButton);
         spawn_button(
             bar,
             fonts,
@@ -588,15 +640,31 @@ fn spawn_right_panel(root: &mut ChildSpawnerCommands, fonts: &UiAssets) {
             Name::new("Inspector"),
         ));
 
-        spawn_button(
-            panel,
-            fonts,
-            "+ New thought",
-            ButtonKind::Primary,
-            AppAction::NewThought,
-            None,
-            40.0,
-        );
+        panel
+            .spawn(Node {
+                column_gap: px(6.0),
+                ..default()
+            })
+            .with_children(|row| {
+                spawn_button(
+                    row,
+                    fonts,
+                    "+ New thought",
+                    ButtonKind::Primary,
+                    AppAction::NewThought,
+                    Some(180.0),
+                    40.0,
+                );
+                spawn_button(
+                    row,
+                    fonts,
+                    "+ Group",
+                    ButtonKind::Ghost,
+                    AppAction::OpenModal(ModalKind::NewGroup),
+                    Some(110.0),
+                    40.0,
+                );
+            });
     });
 }
 
@@ -618,6 +686,26 @@ fn spawn_bottom_dock(root: &mut ChildSpawnerCommands, fonts: &UiAssets) {
     .with_children(|dock| {
         spawn_mode_button(dock, fonts, "Sphere 3D", ViewMode::Sphere);
         spawn_mode_button(dock, fonts, "Board 2D", ViewMode::Board);
+        let link = spawn_button(
+            dock,
+            fonts,
+            "Link",
+            ButtonKind::Ghost,
+            AppAction::ToggleLinkMode,
+            Some(58.0),
+            32.0,
+        );
+        dock.commands().entity(link).insert(LinkButton);
+        let multi = spawn_button(
+            dock,
+            fonts,
+            "Multi",
+            ButtonKind::Ghost,
+            AppAction::ToggleMultiSelect,
+            Some(58.0),
+            32.0,
+        );
+        dock.commands().entity(multi).insert(MultiButton);
         dock.spawn((
             Text::new("Drag to orbit · Scroll to zoom · Drag a thought to move it"),
             text_font(fonts, 10.5, false),
@@ -679,13 +767,87 @@ fn spawn_board(root: &mut ChildSpawnerCommands, fonts: &UiAssets) {
     });
 }
 
+fn spawn_globe_panel(root: &mut ChildSpawnerCommands) {
+    root.spawn((
+        Node {
+            position_type: PositionType::Absolute,
+            right: px(0.0),
+            top: px(0.0),
+            bottom: px(0.0),
+            width: px(360.0),
+            padding: UiRect::all(px(14.0)),
+            border: UiRect::left(px(1.0)),
+            flex_direction: FlexDirection::Column,
+            row_gap: px(10.0),
+            overflow: Overflow::scroll_y(),
+            display: Display::None,
+            ..default()
+        },
+        BackgroundColor(Color::srgba(0.027, 0.043, 0.075, 0.995)),
+        BorderColor::all(LINE),
+        ZIndex(60),
+        ScrollPosition::default(),
+        GlobePanelRoot,
+        GlobePanelScroll,
+        Name::new("Globe panel"),
+    ));
+}
+
+fn spawn_console(root: &mut ChildSpawnerCommands, fonts: &UiAssets) {
+    root.spawn((
+        Node {
+            position_type: PositionType::Absolute,
+            left: px(LEFT_PANEL_W),
+            right: px(RIGHT_PANEL_W),
+            bottom: px(BOTTOM_DOCK_H + 2.0),
+            height: px(42.0),
+            justify_content: JustifyContent::Center,
+            align_items: AlignItems::Center,
+            ..default()
+        },
+        Pickable::IGNORE,
+        Name::new("Console"),
+    ))
+    .with_children(|console| {
+        console
+            .spawn((
+                Node {
+                    width: px(640.0),
+                    padding: UiRect::axes(px(11.0), px(6.0)),
+                    flex_direction: FlexDirection::Column,
+                    row_gap: px(2.0),
+                    border: px(1.0).all(),
+                    border_radius: BorderRadius::all(px(7.0)),
+                    ..default()
+                },
+                BackgroundColor(Color::srgba(0.015, 0.03, 0.05, 0.94)),
+                BorderColor::all(alpha(ACCENT, 0.18)),
+                Pickable::IGNORE,
+            ))
+            .with_children(|panel| {
+                panel.spawn((
+                    Text::new("Select a thought or drag the globe."),
+                    text_font(fonts, 10.5, false),
+                    TextColor(INK),
+                    ConsoleLine1,
+                ));
+                panel.spawn((
+                    Text::new("N for a new thought · Globe for surface controls"),
+                    text_font(fonts, 9.5, false),
+                    TextColor(MUTED),
+                    ConsoleLine2,
+                ));
+            });
+    });
+}
+
 fn spawn_toast(root: &mut ChildSpawnerCommands, fonts: &UiAssets) {
     root.spawn((
         Node {
             position_type: PositionType::Absolute,
             left: px(LEFT_PANEL_W),
             right: px(RIGHT_PANEL_W),
-            bottom: px(BOTTOM_DOCK_H + 12.0),
+            bottom: px(BOTTOM_DOCK_H + 54.0),
             justify_content: JustifyContent::Center,
             display: Display::None,
             ..default()
@@ -1146,6 +1308,38 @@ pub fn rebuild_inspector(
                 return;
             };
 
+            if state.selected_ids.len() > 1 {
+                panel.spawn((
+                    Text::new("SELECTION"),
+                    text_font(&fonts, 10.0, true),
+                    TextColor(ACCENT),
+                ));
+                panel.spawn((
+                    Text::new(format!("{} thoughts selected", state.selected_ids.len())),
+                    text_font(&fonts, 22.0, true),
+                    TextColor(INK),
+                ));
+                panel.spawn((
+                    Text::new("Use Add to group or Remove from group in the top bar."),
+                    text_font(&fonts, 12.0, false),
+                    TextColor(MUTED),
+                    TextLayout {
+                        linebreak: LineBreak::WordOrCharacter,
+                        ..default()
+                    },
+                ));
+                section_label(panel, &fonts, "THOUGHTS");
+                for selected_id in &state.selected_ids {
+                    if let Some(selected_thought) = sphere.node(selected_id) {
+                        panel.spawn((
+                            Text::new(format!("• {}", selected_thought.title)),
+                            text_font(&fonts, 10.5, false),
+                            TextColor(INK),
+                        ));
+                    }
+                }
+                return;
+            }
             panel.spawn((
                 Text::new("THOUGHT"),
                 text_font(&fonts, 10.0, true),
@@ -1157,7 +1351,7 @@ pub fn rebuild_inspector(
                 &node.title,
                 false,
                 38.0,
-                (TitleInput, Name::new("Thought title"), AutoFocus),
+                (TitleInput, Name::new("Thought title")),
             );
             section_label(panel, &fonts, "NOTES");
             spawn_text_input(
@@ -1216,8 +1410,41 @@ pub fn rebuild_inspector(
                     );
                 });
 
-            section_label(panel, &fonts, "CONNECT TO");
             let linked = sphere.links_for(&node.id);
+            if !linked.is_empty() {
+                section_label(panel, &fonts, "LINKS");
+                panel
+                    .spawn(Node {
+                        align_items: AlignItems::Center,
+                        column_gap: px(6.0),
+                        ..default()
+                    })
+                    .with_children(|row| {
+                        row.spawn((
+                            Text::new(format!(
+                                "{} link{}",
+                                linked.len(),
+                                if linked.len() == 1 { "" } else { "s" }
+                            )),
+                            text_font(&fonts, 10.5, false),
+                            TextColor(MUTED),
+                        ));
+                        row.spawn(Node {
+                            flex_grow: 1.0,
+                            ..default()
+                        });
+                        spawn_button(
+                            row,
+                            &fonts,
+                            "Erase link",
+                            ButtonKind::Chip,
+                            AppAction::EraseLinks,
+                            Some(100.0),
+                            28.0,
+                        );
+                    });
+            }
+            section_label(panel, &fonts, "CONNECT TO");
             let mut candidates = 0;
             for other in &sphere.nodes {
                 if other.id == node.id || linked.contains(&other.id.as_str()) {
@@ -1443,7 +1670,8 @@ pub fn rebuild_board(
     }
     state.ui.board = false;
     let sphere = state.current().cloned();
-    let selected = state.selected_id.clone();
+    let selected_ids = state.selected_ids.clone();
+    let unlink_targets = state.unlink_targets.clone();
     for root in &roots {
         commands.entity(root).despawn_related::<Children>();
         commands.entity(root).with_children(|board| {
@@ -1567,8 +1795,11 @@ pub fn rebuild_board(
                             ));
                         }
                         for node in nodes {
-                            let is_selected = selected.as_deref() == Some(node.id.as_str());
-                            let border = if is_selected {
+                            let is_selected = selected_ids.iter().any(|id| id == &node.id);
+                            let is_unlink_target = unlink_targets.iter().any(|id| id == &node.id);
+                            let border = if is_unlink_target {
+                                AMBER
+                            } else if is_selected {
                                 Color::srgba(0.35, 0.85, 0.91, 0.7)
                             } else {
                                 Color::srgba(0.10, 0.16, 0.25, 1.0)
@@ -1586,7 +1817,9 @@ pub fn rebuild_board(
                                         color: Color::NONE,
                                     },
                                     ButtonStyle {
-                                        normal: if is_selected {
+                                        normal: if is_unlink_target {
+                                            Color::srgba(0.22, 0.12, 0.04, 0.8)
+                                        } else if is_selected {
                                             Color::srgba(0.09, 0.2, 0.25, 0.5)
                                         } else {
                                             CARD_BG
@@ -1604,7 +1837,9 @@ pub fn rebuild_board(
                                         border_radius: BorderRadius::all(px(8.0)),
                                         ..default()
                                     },
-                                    BackgroundColor(if is_selected {
+                                    BackgroundColor(if is_unlink_target {
+                                        Color::srgba(0.22, 0.12, 0.04, 0.8)
+                                    } else if is_selected {
                                         Color::srgba(0.09, 0.2, 0.25, 0.5)
                                     } else {
                                         CARD_BG
@@ -1617,6 +1852,7 @@ pub fn rebuild_board(
                                         Text::new(&node.title),
                                         text_font(&fonts, 11.5, true),
                                         TextColor(INK),
+                                        Pickable::IGNORE,
                                     ));
                                     if !node.body.trim().is_empty() {
                                         let snippet: String = node
@@ -1633,6 +1869,7 @@ pub fn rebuild_board(
                                                 linebreak: LineBreak::WordOrCharacter,
                                                 ..default()
                                             },
+                                            Pickable::IGNORE,
                                         ));
                                     }
                                 });
@@ -1641,6 +1878,165 @@ pub fn rebuild_board(
             }
         });
     }
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn rebuild_globe_panel(
+    mut commands: Commands,
+    state: Res<AppState>,
+    fonts: Res<UiAssets>,
+    mut root: Query<(Entity, &mut Node), With<GlobePanelRoot>>,
+    mut last_revision: Local<Option<u64>>,
+    mut last_sphere: Local<Option<String>>,
+) {
+    let Ok((root, mut root_node)) = root.single_mut() else {
+        return;
+    };
+    let open = state.modal == Some(ModalKind::Globe);
+    root_node.display = if open { Display::Flex } else { Display::None };
+    if !open {
+        return;
+    }
+    if *last_revision == Some(state.modal_rev)
+        && last_sphere.as_deref() == Some(state.current_id.as_str())
+    {
+        return;
+    }
+    *last_revision = Some(state.modal_rev);
+    *last_sphere = Some(state.current_id.clone());
+    let Some(sphere) = state.current().cloned() else {
+        return;
+    };
+    commands.entity(root).despawn_related::<Children>();
+    commands.entity(root).with_children(|panel| {
+        panel
+            .spawn(Node {
+                justify_content: JustifyContent::SpaceBetween,
+                align_items: AlignItems::Center,
+                ..default()
+            })
+            .with_children(|row| {
+                row.spawn((
+                    Text::new("GLOBE"),
+                    text_font(&fonts, 10.0, true),
+                    TextColor(ACCENT),
+                ));
+                spawn_button(
+                    row,
+                    &fonts,
+                    "Done",
+                    ButtonKind::Ghost,
+                    AppAction::CloseModal,
+                    Some(64.0),
+                    32.0,
+                );
+            });
+        modal_title(panel, &fonts, "Surface controls");
+        modal_hint(
+            panel,
+            &fonts,
+            "Changes update the globe in real time. The overview panel is covered while this panel is open.",
+        );
+        section_label(panel, &fonts, "SURFACE");
+        modal_hint(
+            panel,
+            &fonts,
+            &format!(
+                "Current surface: {} · {}",
+                skin_label(&sphere.skin),
+                background_label(&sphere.background)
+            ),
+        );
+        modal_slider_row(
+            panel,
+            &fonts,
+            "Sphere radius",
+            1.8,
+            5.0,
+            sphere.radius,
+            GlobeRadiusSlider,
+            GlobeRadiusValue,
+        );
+        modal_slider_row(
+            panel,
+            &fonts,
+            "Transparency",
+            0.15,
+            1.0,
+            sphere.transparency,
+            GlobeTransparencySlider,
+            GlobeTransparencyValue,
+        );
+        section_label(panel, &fonts, "PROJECTION LINES");
+        panel
+            .spawn(Node {
+                flex_direction: FlexDirection::Row,
+                flex_wrap: FlexWrap::Wrap,
+                column_gap: px(5.0),
+                row_gap: px(5.0),
+                ..default()
+            })
+            .with_children(|row| {
+                spawn_choice_button(
+                    row,
+                    &fonts,
+                    "Lat / Long",
+                    sphere.grid == "latlong",
+                    AppAction::SetGrid("latlong".to_owned()),
+                );
+                spawn_choice_button(
+                    row,
+                    &fonts,
+                    "Geodesic",
+                    sphere.grid == "geodesic",
+                    AppAction::SetGrid("geodesic".to_owned()),
+                );
+                spawn_choice_button(
+                    row,
+                    &fonts,
+                    "Off",
+                    sphere.grid == "off",
+                    AppAction::SetGrid("off".to_owned()),
+                );
+            });
+        section_label(panel, &fonts, "SURFACE SKIN");
+        modal_skin_grid(panel, &fonts, &sphere.skin);
+        section_label(panel, &fonts, "BACKDROP");
+        panel
+            .spawn(Node {
+                flex_direction: FlexDirection::Row,
+                column_gap: px(6.0),
+                ..default()
+            })
+            .with_children(|row| {
+                for (id, label) in BACKGROUNDS {
+                    spawn_choice_button(
+                        row,
+                        &fonts,
+                        label,
+                        sphere.background == *id,
+                        AppAction::SetBackground((*id).to_owned()),
+                    );
+                }
+            });
+        section_label(panel, &fonts, "GROUP EDGE COLOURS");
+        if sphere.groups.is_empty() {
+            modal_hint(panel, &fonts, "Create a group to give this map an edge colour.");
+        } else {
+            for group in &sphere.groups {
+                modal_group_palette(panel, &fonts, group);
+            }
+        }
+        spawn_button(
+            panel,
+            &fonts,
+            "Done",
+            ButtonKind::Primary,
+            AppAction::CloseModal,
+            None,
+            38.0,
+        );
+    });
 }
 
 pub fn rebuild_modal(
@@ -1656,7 +2052,7 @@ pub fn rebuild_modal(
     }
     *last_revision = Some(state.modal_rev);
     for (entity, mut node) in &mut modal_root {
-        let open = state.modal.is_some();
+        let open = state.modal.is_some() && state.modal != Some(ModalKind::Globe);
         node.display = if open { Display::Flex } else { Display::None };
         commands.entity(entity).insert(if open {
             Pickable::default()
@@ -1671,6 +2067,9 @@ pub fn rebuild_modal(
     let Some(kind) = state.modal else {
         return;
     };
+    if kind == ModalKind::Globe {
+        return;
+    }
     commands.entity(content).with_children(|card| {
         let kicker = match kind {
             ModalKind::More => "SPHERE",
@@ -1758,6 +2157,52 @@ pub fn rebuild_modal(
                     (ModalInput, AutoFocus, Name::new("Imported JSON")),
                 );
                 modal_buttons(card, &fonts, "Cancel", "Import sphere");
+            }
+            ModalKind::NewThought => {
+                modal_title(card, &fonts, "New thought");
+                modal_hint(
+                    card,
+                    &fonts,
+                    "Enter a title. The group defaults to None; open the dropdown to choose another.",
+                );
+                spawn_text_input(
+                    card,
+                    &fonts,
+                    &state.modal_input,
+                    false,
+                    38.0,
+                    (ModalInput, AutoFocus, Name::new("Thought title")),
+                );
+                if let Some(sphere) = state.current() {
+                    modal_group_dropdown(
+                        card,
+                        &fonts,
+                        sphere,
+                        &state.modal_group,
+                        state.group_dropdown_open,
+                        true,
+                    );
+                }
+                modal_buttons(card, &fonts, "Cancel", "Create thought");
+            }
+            ModalKind::AddToGroup => {
+                modal_title(card, &fonts, "Add selected thoughts to a group");
+                modal_hint(
+                    card,
+                    &fonts,
+                    "Choose the destination group. The layout will re-pack automatically.",
+                );
+                if let Some(sphere) = state.current() {
+                    modal_group_dropdown(
+                        card,
+                        &fonts,
+                        sphere,
+                        &state.modal_group,
+                        state.group_dropdown_open,
+                        false,
+                    );
+                }
+                modal_buttons(card, &fonts, "Cancel", "Add to group");
             }
             ModalKind::Globe => {
                 modal_title(card, &fonts, "Globe settings");
@@ -2139,6 +2584,128 @@ fn modal_group_palette(
         });
 }
 
+fn modal_group_dropdown(
+    parent: &mut ChildSpawnerCommands,
+    fonts: &UiAssets,
+    sphere: &crate::model::Sphere,
+    selected: &str,
+    open: bool,
+    include_none: bool,
+) {
+    let name = if selected.is_empty() {
+        "None".to_owned()
+    } else {
+        sphere.group_name(selected).to_owned()
+    };
+    parent
+        .spawn((
+            Button,
+            Hovered::default(),
+            ActionButton(AppAction::ToggleGroupDropdown),
+            ButtonStyle {
+                normal: Color::srgba(0.03, 0.06, 0.10, 0.95),
+                hover: Color::srgba(0.06, 0.12, 0.18, 1.0),
+                pressed: Color::srgba(0.02, 0.04, 0.07, 1.0),
+                border: INPUT_LINE,
+            },
+            Node {
+                width: percent(100.0),
+                min_height: px(36.0),
+                padding: UiRect::horizontal(px(10.0)),
+                align_items: AlignItems::Center,
+                border: px(1.0).all(),
+                border_radius: BorderRadius::all(px(8.0)),
+                ..default()
+            },
+            BackgroundColor(Color::srgba(0.03, 0.06, 0.10, 0.95)),
+            BorderColor::all(INPUT_LINE),
+        ))
+        .with_children(|row| {
+            row.spawn((
+                Text::new(format!("Group: {name}")),
+                text_font(fonts, 11.0, false),
+                TextColor(INK),
+            ));
+            row.spawn(Node {
+                flex_grow: 1.0,
+                ..default()
+            });
+            row.spawn((
+                Text::new(if open { "^" } else { "v" }),
+                text_font(fonts, 10.0, true),
+                TextColor(ACCENT),
+            ));
+        });
+    if open {
+        parent
+            .spawn(Node {
+                width: percent(100.0),
+                flex_direction: FlexDirection::Column,
+                row_gap: px(3.0),
+                padding: UiRect::all(px(4.0)),
+                border: px(1.0).all(),
+                border_radius: BorderRadius::all(px(8.0)),
+                ..default()
+            })
+            .insert(BackgroundColor(CARD_BG))
+            .insert(BorderColor::all(INPUT_LINE))
+            .with_children(|list| {
+                if include_none {
+                    group_option_button(list, fonts, "None", selected.is_empty(), "");
+                }
+                for group in &sphere.groups {
+                    group_option_button(list, fonts, &group.name, group.id == selected, &group.id);
+                }
+            });
+    }
+}
+
+fn group_option_button(
+    parent: &mut ChildSpawnerCommands,
+    fonts: &UiAssets,
+    label: &str,
+    selected: bool,
+    group_id: &str,
+) {
+    let border = if selected { ACCENT } else { Color::NONE };
+    parent
+        .spawn((
+            Button,
+            Hovered::default(),
+            ActionButton(AppAction::SetModalGroup(group_id.to_owned())),
+            ButtonStyle {
+                normal: if selected {
+                    Color::srgba(0.10, 0.24, 0.30, 0.55)
+                } else {
+                    Color::NONE
+                },
+                hover: Color::srgba(0.06, 0.12, 0.18, 1.0),
+                pressed: Color::srgba(0.02, 0.04, 0.07, 1.0),
+                border,
+            },
+            Node {
+                width: percent(100.0),
+                min_height: px(28.0),
+                padding: UiRect::horizontal(px(8.0)),
+                align_items: AlignItems::Center,
+                border: px(1.0).all(),
+                border_radius: BorderRadius::all(px(6.0)),
+                ..default()
+            },
+            BackgroundColor(if selected {
+                Color::srgba(0.10, 0.24, 0.30, 0.55)
+            } else {
+                Color::NONE
+            }),
+            BorderColor::all(border),
+        ))
+        .with_child((
+            Text::new(label),
+            text_font(fonts, 10.5, false),
+            TextColor(if selected { INK } else { MUTED }),
+        ));
+}
+
 fn modal_title(parent: &mut ChildSpawnerCommands, fonts: &UiAssets, text: &str) {
     parent.spawn((
         Text::new(text),
@@ -2290,7 +2857,7 @@ pub fn sync_modal_blocking(
     mut roots: Query<(&mut Node, &mut Pickable), With<ModalRoot>>,
 ) {
     for (mut node, mut pickable) in &mut roots {
-        let open = state.modal.is_some();
+        let open = state.modal.is_some() && state.modal != Some(ModalKind::Globe);
         node.display = if open { Display::Flex } else { Display::None };
         *pickable = if open {
             Pickable::default()
@@ -2531,6 +3098,15 @@ pub fn scroll_lists(
             Without<BoardScroll>,
         ),
     >,
+    mut globe_panel: Query<
+        (&mut ScrollPosition, &ComputedNode),
+        (
+            With<GlobePanelScroll>,
+            Without<SphereListScroll>,
+            Without<BoardScroll>,
+            Without<ModalContent>,
+        ),
+    >,
 ) {
     let Some(cursor) = window.cursor_position() else {
         return;
@@ -2546,6 +3122,14 @@ pub fn scroll_lists(
         return;
     }
     let height = window.resolution.height();
+    if state.modal == Some(ModalKind::Globe) && cursor.x > window.resolution.width() - 400.0 {
+        if let Ok((mut position, computed)) = globe_panel.single_mut() {
+            let max = (computed.content_size().y - computed.size().y).max(0.0)
+                * computed.inverse_scale_factor();
+            position.y = (position.y - delta).clamp(0.0, max);
+        }
+        return;
+    }
     if state.modal.is_some()
         && cursor.x > 400.0
         && cursor.x < window.resolution.width() - 400.0
@@ -2689,13 +3273,22 @@ pub fn sync_node_labels(
         node.top = px(screen.y - size.y - 20.0);
 
         let color = color_from_hex(sphere.group_color(&thought.group_id));
-        let selected = state.selected_id.as_deref() == Some(thought.id.as_str());
-        background.0 = if selected {
+        let selected = state.selected_ids.iter().any(|id| id == &thought.id);
+        let unlink_target = state.unlink_targets.iter().any(|id| id == &thought.id);
+        background.0 = if unlink_target {
+            Color::srgba(0.24, 0.12, 0.04, 0.96)
+        } else if selected {
             Color::srgba(0.07, 0.22, 0.26, 0.94)
         } else {
             Color::srgba(0.02, 0.05, 0.09, 0.84)
         };
-        *border = BorderColor::all(if selected { ACCENT } else { alpha(color, 0.34) });
+        *border = BorderColor::all(if unlink_target {
+            AMBER
+        } else if selected {
+            ACCENT
+        } else {
+            alpha(color, 0.34)
+        });
         if let Some(&child) = children.first()
             && let Ok(mut text) = texts.get_mut(child)
             && text.0 != thought.title
@@ -2847,5 +3440,76 @@ pub fn board_drag_start(
     }
     if let Ok(mut outline) = outlines.get_mut(entity) {
         outline.color = ACCENT;
+    }
+}
+
+#[allow(clippy::type_complexity)]
+pub fn update_action_buttons(
+    state: Res<AppState>,
+    mut buttons: Query<
+        (
+            &mut Node,
+            Has<NewThoughtButton>,
+            Has<AddGroupButton>,
+            Has<RemoveGroupButton>,
+        ),
+        Or<(
+            With<NewThoughtButton>,
+            With<AddGroupButton>,
+            With<RemoveGroupButton>,
+        )>,
+    >,
+) {
+    let multi = state.selected_ids.len() > 1;
+    for (mut node, new_thought, add_group, remove_group) in &mut buttons {
+        node.display = if new_thought {
+            if multi { Display::None } else { Display::Flex }
+        } else if add_group || remove_group {
+            if multi { Display::Flex } else { Display::None }
+        } else {
+            Display::Flex
+        };
+    }
+}
+
+#[allow(clippy::type_complexity)]
+pub fn update_link_button(
+    state: Res<AppState>,
+    mut buttons: Query<
+        (
+            &mut BackgroundColor,
+            &mut BorderColor,
+            Has<LinkButton>,
+            Has<MultiButton>,
+        ),
+        Or<(With<LinkButton>, With<MultiButton>)>,
+    >,
+) {
+    for (mut background, mut border, is_link, is_multi) in &mut buttons {
+        let active = (is_link && state.link_mode) || (is_multi && state.multi_select_mode);
+        if active {
+            background.0 = Color::srgba(0.18, 0.52, 0.58, 0.55);
+            *border = BorderColor::all(ACCENT);
+        } else {
+            background.0 = Color::srgba(0.04, 0.08, 0.13, 0.9);
+            *border = BorderColor::all(LINE);
+        }
+    }
+}
+
+pub fn update_console(
+    state: Res<AppState>,
+    mut line1: Query<&mut Text, With<ConsoleLine1>>,
+    mut line2: Query<&mut Text, (With<ConsoleLine2>, Without<ConsoleLine1>)>,
+) {
+    if let Ok(mut text) = line1.single_mut()
+        && text.0 != state.console_line1
+    {
+        text.0 = state.console_line1.clone();
+    }
+    if let Ok(mut text) = line2.single_mut()
+        && text.0 != state.console_line2
+    {
+        text.0 = state.console_line2.clone();
     }
 }

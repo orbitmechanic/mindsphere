@@ -159,6 +159,7 @@ pub struct SceneTextures {
     pub skins: HashMap<String, Handle<Image>>,
     pub stars: Handle<Image>,
     pub skymap: Handle<Image>,
+    pub geodesic_grid: Handle<Image>,
 }
 
 impl SceneTextures {
@@ -171,6 +172,7 @@ impl SceneTextures {
             skins,
             stars: asset_server.load("textures/deep_space.png"),
             skymap: asset_server.load("textures/nebula.png"),
+            geodesic_grid: asset_server.load("textures/grid_geodesic.png"),
         }
     }
 

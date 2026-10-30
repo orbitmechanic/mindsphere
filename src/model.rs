@@ -83,6 +83,10 @@ fn default_background() -> String {
     "stars".to_owned()
 }
 
+fn default_grid() -> String {
+    "latlong".to_owned()
+}
+
 impl Default for CameraData {
     fn default() -> Self {
         Self {
@@ -172,6 +176,8 @@ pub struct Sphere {
     pub transparency: f32,
     #[serde(default = "default_background")]
     pub background: String,
+    #[serde(default = "default_grid")]
+    pub grid: String,
     #[serde(default)]
     pub groups: Vec<Group>,
     #[serde(default)]
@@ -201,6 +207,7 @@ impl Sphere {
             skin: default_skin(),
             transparency: default_transparency(),
             background: default_background(),
+            grid: default_grid(),
             groups: Vec::new(),
             nodes: Vec::new(),
             links: Vec::new(),
@@ -304,6 +311,9 @@ impl Sphere {
         if self.background.trim().is_empty() {
             self.background = default_background();
         }
+        if !matches!(self.grid.as_str(), "latlong" | "geodesic" | "off") {
+            self.grid = default_grid();
+        }
 
         let mut group_ids = HashSet::new();
         for group in &mut self.groups {
@@ -404,6 +414,13 @@ impl Sphere {
             b: b.to_owned(),
         });
         true
+    }
+
+    pub fn remove_link(&mut self, a: &str, b: &str) -> bool {
+        let before = self.links.len();
+        self.links
+            .retain(|link| !((link.a == a && link.b == b) || (link.a == b && link.b == a)));
+        self.links.len() != before
     }
 
     pub fn remove_thought(&mut self, id: &str) {

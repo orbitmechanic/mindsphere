@@ -24,6 +24,9 @@ pub struct SkySphere;
 pub struct StarfieldRoot;
 
 #[derive(Component)]
+pub struct GridOverlay;
+
+#[derive(Component)]
 pub struct ThoughtVisual;
 
 #[derive(Resource)]
@@ -67,11 +70,26 @@ pub fn setup_scene(
         alpha_mode: AlphaMode::Blend,
         ..default()
     });
+    let grid_material = materials.add(StandardMaterial {
+        base_color: Color::srgba(0.75, 0.96, 1.0, 0.85),
+        base_color_texture: Some(textures.geodesic_grid.clone()),
+        unlit: true,
+        alpha_mode: AlphaMode::Blend,
+        cull_mode: Some(bevy::render::render_resource::Face::Back),
+        ..default()
+    });
     commands.spawn((
         Mesh3d(globe_mesh),
         MeshMaterial3d(globe_material.clone()),
         Transform::from_xyz(0.0, 0.0, 0.0),
         Globe,
+    ));
+    commands.spawn((
+        Mesh3d(meshes.add(Sphere::new(1.0).mesh().uv(96, 48))),
+        MeshMaterial3d(grid_material.clone()),
+        Transform::from_xyz(0.0, 0.0, 0.0).with_scale(Vec3::splat(2.805)),
+        Visibility::Hidden,
+        GridOverlay,
     ));
 
     let sky_mesh = meshes.add(Sphere::new(1.0).mesh().uv(64, 32));
@@ -187,7 +205,8 @@ pub fn sync_globe(
     textures: Res<SceneTextures>,
     handles: Res<GlobeHandles>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    mut globe: Query<&mut Transform, With<Globe>>,
+    mut globe: Query<&mut Transform, (With<Globe>, Without<GridOverlay>)>,
+    mut grid: Query<(&mut Transform, &mut Visibility), With<GridOverlay>>,
 ) {
     if !state.ui.globe {
         return;
@@ -214,6 +233,14 @@ pub fn sync_globe(
     for mut transform in &mut globe {
         transform.scale = Vec3::splat(sphere.radius);
     }
+    for (mut transform, mut visibility) in &mut grid {
+        transform.scale = Vec3::splat(sphere.radius + 0.006);
+        *visibility = if sphere.grid == "geodesic" {
+            Visibility::Inherited
+        } else {
+            Visibility::Hidden
+        };
+    }
 }
 
 pub fn update_camera(state: Res<AppState>, mut camera: Query<&mut Transform, With<OrbitCamera>>) {
@@ -230,11 +257,13 @@ pub fn update_camera(state: Res<AppState>, mut camera: Query<&mut Transform, Wit
     transform.look_at(Vec3::ZERO, Vec3::Y);
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn camera_controls(
     buttons: Res<ButtonInput<MouseButton>>,
     mut motion: MessageReader<MouseMotion>,
     mut wheel: MessageReader<MouseWheel>,
     window: Single<&Window>,
+    keyboard: Res<ButtonInput<KeyCode>>,
     camera: Query<(&Camera, &GlobalTransform), With<OrbitCamera>>,
     mut state: ResMut<AppState>,
     mut drag: ResMut<DragState>,
@@ -270,9 +299,16 @@ pub fn camera_controls(
     if buttons.just_pressed(MouseButton::Left) && over_scene {
         let picked = pick_node(&state, &camera, cursor);
         if let Some(id) = picked {
-            state.select_node(&id);
-            drag.node = Some(id);
-            drag.orbiting = false;
+            let additive = keyboard.any_pressed([KeyCode::ControlLeft, KeyCode::ControlRight])
+                || keyboard.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]);
+            state.select_node_with_modifier(&id, additive);
+            if state.link_mode || state.unlink_mode {
+                drag.node = None;
+                drag.orbiting = false;
+            } else {
+                drag.node = Some(id);
+                drag.orbiting = false;
+            }
         } else {
             drag.orbiting = true;
             drag.node = None;
@@ -368,7 +404,8 @@ pub fn sync_scene(
         return;
     };
     state.ui.scene = false;
-    let selected = state.selected_id.clone();
+    let selected_ids = state.selected_ids.clone();
+    let unlink_targets = state.unlink_targets.clone();
 
     let live_ids: std::collections::HashSet<String> =
         sphere.nodes.iter().map(|node| node.id.clone()).collect();
@@ -386,8 +423,11 @@ pub fn sync_scene(
 
     for node in &sphere.nodes {
         let color = color_from_hex(sphere.group_color(&node.group_id));
-        let is_selected = selected.as_deref() == Some(node.id.as_str());
-        let emissive = if is_selected {
+        let is_selected = selected_ids.iter().any(|id| id == &node.id);
+        let is_unlink_target = unlink_targets.iter().any(|id| id == &node.id);
+        let emissive = if is_unlink_target {
+            Color::srgb(1.0, 0.58, 0.28).to_linear() * 0.95
+        } else if is_selected {
             color.to_linear() * 0.95
         } else {
             color.to_linear() * 0.28
@@ -399,7 +439,9 @@ pub fn sync_scene(
                 transform.translation = position;
                 *visibility = Visibility::Inherited;
                 if let Some(mut material) = materials.get_mut(&material_handle.0) {
-                    material.base_color = if is_selected {
+                    material.base_color = if is_unlink_target {
+                        Color::srgb(1.0, 0.68, 0.35)
+                    } else if is_selected {
                         lighten(color, 0.18)
                     } else {
                         color
@@ -409,7 +451,13 @@ pub fn sync_scene(
             }
         } else {
             let material = materials.add(StandardMaterial {
-                base_color: color,
+                base_color: if is_unlink_target {
+                    Color::srgb(1.0, 0.68, 0.35)
+                } else if is_selected {
+                    lighten(color, 0.18)
+                } else {
+                    color
+                },
                 emissive,
                 metallic: 0.1,
                 perceptual_roughness: 0.28,
@@ -439,30 +487,31 @@ pub fn draw_globe(mut gizmos: Gizmos, state: Res<AppState>) {
         return;
     };
     let radius = sphere.radius + 0.012;
-
-    for lon in (0..12).map(|i| i as f32 * 30.0) {
-        let mut points = Vec::with_capacity(65);
-        for step in 0..=64 {
-            let lat = -90.0 + step as f32 * (180.0 / 64.0);
-            points.push(spherical_vec(lat, lon) * radius);
+    if sphere.grid == "latlong" {
+        for lon in (0..12).map(|i| i as f32 * 30.0) {
+            let mut points = Vec::with_capacity(65);
+            for step in 0..=64 {
+                let lat = -90.0 + step as f32 * (180.0 / 64.0);
+                points.push(spherical_vec(lat, lon) * radius);
+            }
+            gizmos.linestrip(points, grid);
         }
-        gizmos.linestrip(points, grid);
-    }
-    for lat in [-60.0, -30.0, 30.0, 60.0] {
-        let mut points = Vec::with_capacity(65);
-        for step in 0..=64 {
-            let lon = step as f32 * (360.0 / 64.0);
-            points.push(spherical_vec(lat, lon) * radius);
+        for lat in [-60.0, -30.0, 30.0, 60.0] {
+            let mut points = Vec::with_capacity(65);
+            for step in 0..=64 {
+                let lon = step as f32 * (360.0 / 64.0);
+                points.push(spherical_vec(lat, lon) * radius);
+            }
+            gizmos.linestrip(points, grid);
         }
-        gizmos.linestrip(points, grid);
-    }
-    {
-        let mut points = Vec::with_capacity(65);
-        for step in 0..=64 {
-            let lon = step as f32 * (360.0 / 64.0);
-            points.push(spherical_vec(0.0, lon) * radius);
+        {
+            let mut points = Vec::with_capacity(65);
+            for step in 0..=64 {
+                let lon = step as f32 * (360.0 / 64.0);
+                points.push(spherical_vec(0.0, lon) * radius);
+            }
+            gizmos.linestrip(points, equator);
         }
-        gizmos.linestrip(points, equator);
     }
 
     for link in &sphere.links {

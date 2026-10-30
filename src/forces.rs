@@ -80,6 +80,11 @@ fn step(sphere: &mut Sphere, force: &mut ForceState, dragged: Option<&str>, dt: 
     // Thought-to-thought repulsion: keep centres at least two thought diameters apart.
     for i in 0..count {
         for j in (i + 1)..count {
+            if !sphere.nodes[i].group_id.is_empty()
+                && sphere.nodes[i].group_id == sphere.nodes[j].group_id
+            {
+                continue;
+            }
             let angle = positions[i].dot(positions[j]).clamp(-1.0, 1.0).acos();
             let world_distance = angle * radius;
             if world_distance >= MIN_THOUGHT_DIST {
@@ -117,13 +122,6 @@ fn step(sphere: &mut Sphere, force: &mut ForceState, dragged: Option<&str>, dt: 
             extent = extent.max(angle);
         }
         extent += GROUP_ANGULAR_RADIUS;
-        for index in indices {
-            let Some(direction) = tangent_towards(positions[*index], center) else {
-                continue;
-            };
-            let angle = positions[*index].dot(center).clamp(-1.0, 1.0).acos();
-            acceleration[*index] += direction * (angle * 4.5).min(2.5);
-        }
         groups.push((group_id.clone(), center, extent, indices.clone()));
     }
 
@@ -188,7 +186,106 @@ fn step(sphere: &mut Sphere, force: &mut ForceState, dragged: Option<&str>, dt: 
     for (node, position) in sphere.nodes.iter_mut().zip(positions) {
         node.pos = [position.x, position.y, position.z];
     }
+    max_step.max(apply_hex_packing(sphere))
+}
+
+fn apply_hex_packing(sphere: &mut Sphere) -> f32 {
+    let mut groups: HashMap<String, Vec<usize>> = HashMap::new();
+    for (index, node) in sphere.nodes.iter().enumerate() {
+        if !node.group_id.is_empty() {
+            groups.entry(node.group_id.clone()).or_default().push(index);
+        }
+    }
+    let spacing = 2.0 * crate::util::NODE_RADIUS + 0.008;
+    let mut max_step = 0.0_f32;
+    for indices in groups.values() {
+        if indices.is_empty() {
+            continue;
+        }
+        let center = indices
+            .iter()
+            .fold(Vec3::ZERO, |sum, index| {
+                sum + Vec3::from_array(sphere.nodes[*index].pos)
+            })
+            .normalize_or_zero();
+        if center.length_squared() < 0.5 {
+            continue;
+        }
+        let reference = if center.y.abs() < 0.9 {
+            Vec3::Y
+        } else {
+            Vec3::X
+        };
+        let tangent = reference.cross(center).normalize_or_zero();
+        let bitangent = center.cross(tangent).normalize_or_zero();
+        if tangent.length_squared() < 0.5 || bitangent.length_squared() < 0.5 {
+            continue;
+        }
+        let mut slots = hex_slots(indices.len(), spacing);
+        if slots.is_empty() {
+            continue;
+        }
+        let mean = slots.iter().fold(Vec2::ZERO, |sum, slot| sum + *slot) / slots.len() as f32;
+        for slot in &mut slots {
+            *slot -= mean;
+        }
+        let mut node_indices = indices.clone();
+        node_indices.sort_by(|a, b| {
+            let pa = Vec3::from_array(sphere.nodes[*a].pos);
+            let pb = Vec3::from_array(sphere.nodes[*b].pos);
+            let aa = pa.dot(bitangent).atan2(pa.dot(tangent));
+            let ab = pb.dot(bitangent).atan2(pb.dot(tangent));
+            aa.total_cmp(&ab)
+        });
+        slots.sort_by(|a, b| a.y.atan2(a.x).total_cmp(&b.y.atan2(b.x)));
+        for (index, slot) in node_indices.into_iter().zip(slots) {
+            let previous = Vec3::from_array(sphere.nodes[index].pos);
+            let target = (center
+                + tangent * (slot.x / sphere.radius)
+                + bitangent * (slot.y / sphere.radius))
+                .normalize_or_zero();
+            if target.length_squared() < 0.5 {
+                continue;
+            }
+            max_step = max_step.max(target.distance(previous));
+            sphere.nodes[index].pos = [target.x, target.y, target.z];
+        }
+    }
     max_step
+}
+
+fn hex_slots(count: usize, spacing: f32) -> Vec<Vec2> {
+    let mut axial = Vec::with_capacity(count);
+    axial.push((0_i32, 0_i32));
+    let mut ring = 1_i32;
+    while axial.len() < count {
+        let mut q = -ring;
+        let mut r = ring;
+        let directions = [(1, 0), (0, -1), (-1, 1), (-1, 0), (0, 1), (1, -1)];
+        for (dq, dr) in directions {
+            for _ in 0..ring {
+                axial.push((q, r));
+                q += dq;
+                r += dr;
+                if axial.len() >= count {
+                    break;
+                }
+            }
+            if axial.len() >= count {
+                break;
+            }
+        }
+        ring += 1;
+    }
+    axial
+        .into_iter()
+        .map(|(q, r)| {
+            Vec2::new(
+                spacing * 3.0_f32.sqrt() * (q as f32 + r as f32 * 0.5),
+                spacing * 1.5 * r as f32,
+            )
+        })
+        .collect()
 }
 
 fn tangent_towards(from: Vec3, to: Vec3) -> Option<Vec3> {

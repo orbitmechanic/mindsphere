@@ -1,6 +1,7 @@
 use bevy::input_focus::{FocusCause, InputFocus};
 use bevy::prelude::*;
 use bevy::text::EditableText;
+use bevy::window::{CursorIcon, SystemCursorIcon};
 
 use crate::state::{ActionMessage, AppAction, AppState, ModalKind, Tone, ViewMode};
 use crate::{storage, ui};
@@ -8,12 +9,18 @@ use crate::{storage, ui};
 #[cfg(target_arch = "wasm32")]
 use crate::state::WebImportState;
 
-pub fn handle_actions(mut reader: MessageReader<ActionMessage>, mut state: ResMut<AppState>) {
+pub fn handle_actions(
+    mut reader: MessageReader<ActionMessage>,
+    mut state: ResMut<AppState>,
+    keyboard: Res<ButtonInput<KeyCode>>,
+) {
+    let additive = keyboard.any_pressed([KeyCode::ControlLeft, KeyCode::ControlRight])
+        || keyboard.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]);
     for ActionMessage(action) in reader.read() {
         match action.clone() {
-            AppAction::NewThought => state.new_thought(),
+            AppAction::NewThought => state.open_new_thought_modal(),
             AppAction::SelectSphere(id) => state.select_sphere(&id),
-            AppAction::SelectNode(id) => state.select_node(&id),
+            AppAction::SelectNode(id) => state.select_node_with_modifier(&id, additive),
             AppAction::SetMode(mode) => state.set_mode(mode),
             AppAction::NewSphere | AppAction::OpenModal(ModalKind::NewSphere) => {
                 state.open_modal(ModalKind::NewSphere)
@@ -40,7 +47,10 @@ pub fn handle_actions(mut reader: MessageReader<ActionMessage>, mut state: ResMu
                 state.export_current();
                 state.close_modal();
             }
-            AppAction::CloseModal => state.close_modal(),
+            AppAction::CloseModal => {
+                state.close_modal();
+                state.set_console("Ready.", "Select a thought or use the controls.");
+            }
             AppAction::SubmitModal => state.submit_modal(),
             AppAction::MoveToGroup(group_id) => state.move_selected_to_group(&group_id),
             AppAction::ConnectTo(node_id) => state.connect_selected_to(&node_id),
@@ -57,6 +67,17 @@ pub fn handle_actions(mut reader: MessageReader<ActionMessage>, mut state: ResMu
                 state.set_group_color(&group, &color);
                 state.modal_rev = state.modal_rev.wrapping_add(1);
             }
+            AppAction::SetGrid(grid) => {
+                state.set_grid(&grid);
+                state.modal_rev = state.modal_rev.wrapping_add(1);
+            }
+            AppAction::ToggleLinkMode => state.toggle_link_mode(),
+            AppAction::ToggleMultiSelect => state.toggle_multi_select(),
+            AppAction::EraseLinks => state.erase_selected_links(),
+            AppAction::AddSelectedToGroup => state.open_add_to_group_modal(),
+            AppAction::RemoveSelectedFromGroup => state.remove_selected_from_groups(),
+            AppAction::ToggleGroupDropdown => state.toggle_group_dropdown(),
+            AppAction::SetModalGroup(group) => state.set_modal_group(&group),
         }
     }
 }
@@ -76,7 +97,7 @@ pub fn keyboard_shortcuts(
     if keyboard.just_pressed(KeyCode::Escape) {
         if state.modal.is_some() {
             state.close_modal();
-        } else {
+        } else if !state.cancel_modes() {
             state.clear_selection();
         }
         return;
@@ -107,9 +128,33 @@ pub fn keyboard_shortcuts(
     } else if keyboard.just_pressed(KeyCode::Digit2) {
         state.set_mode(ViewMode::Board);
     } else if keyboard.just_pressed(KeyCode::KeyN) {
-        state.new_thought();
+        state.open_new_thought_modal();
+    } else if keyboard.just_pressed(KeyCode::KeyL) {
+        state.toggle_link_mode();
+    } else if keyboard.just_pressed(KeyCode::KeyM) {
+        state.toggle_multi_select();
     } else if keyboard.just_pressed(KeyCode::Delete) || keyboard.just_pressed(KeyCode::Backspace) {
         state.delete_selected();
+    }
+}
+
+pub fn update_cursor(
+    state: Res<AppState>,
+    window: Single<Entity, With<Window>>,
+    mut commands: Commands,
+    mut last: Local<Option<bool>>,
+) {
+    let active = state.link_mode || state.unlink_mode;
+    if *last == Some(active) {
+        return;
+    }
+    *last = Some(active);
+    if active {
+        commands
+            .entity(*window)
+            .insert(CursorIcon::from(SystemCursorIcon::Crosshair));
+    } else {
+        commands.entity(*window).remove::<CursorIcon>();
     }
 }
 
