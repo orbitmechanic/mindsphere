@@ -15,8 +15,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  GODOT_VERSION: "4.7.2"
-  GODOT_RELEASE: "4.7.2-stable"
+  WASM_BINDGEN_VERSION: "0.2.130"
+  BINARYEN_VERSION: "123"
 
 jobs:
   build:
@@ -25,24 +25,34 @@ jobs:
       - name: Check out
         uses: actions/checkout@v4
 
-      - name: Install Godot and export templates
-        run: |
-          set -euo pipefail
-          curl -fsSL -o /tmp/godot.zip "https://github.com/godotengine/godot/releases/download/${GODOT_RELEASE}/Godot_v${GODOT_RELEASE}_linux.x86_64.zip"
-          unzip -q /tmp/godot.zip -d /tmp/godot
-          sudo install -m 755 "/tmp/godot/Godot_v${GODOT_RELEASE}_linux.x86_64" /usr/local/bin/godot
-          curl -fsSL -o /tmp/templates.tpz "https://github.com/godotengine/godot/releases/download/${GODOT_RELEASE}/Godot_v${GODOT_RELEASE}_export_templates.tpz"
-          unzip -q /tmp/templates.tpz -d /tmp/templates
-          mkdir -p "$HOME/.local/share/godot/export_templates"
-          mv /tmp/templates/templates "$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.stable"
-          godot --version
+      - name: Install Rust target
+        run: rustup target add wasm32-unknown-unknown
 
-      - name: Export web build
+      - name: Cache Rust builds
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+
+      - name: Install wasm-bindgen
         run: |
           set -euo pipefail
-          godot --headless --path . --import
-          mkdir -p build/web
-          godot --headless --path . --export-release "Web" build/web/index.html
+          curl -fsSL -o /tmp/wasm-bindgen.tar.gz \
+            "https://github.com/rustwasm/wasm-bindgen/releases/download/${WASM_BINDGEN_VERSION}/wasm-bindgen-${WASM_BINDGEN_VERSION}-x86_64-unknown-linux-musl.tar.gz"
+          tar xzf /tmp/wasm-bindgen.tar.gz -C /tmp
+          sudo install -m 755 "/tmp/wasm-bindgen-${WASM_BINDGEN_VERSION}-x86_64-unknown-linux-musl/wasm-bindgen" /usr/local/bin/wasm-bindgen
+          wasm-bindgen --version
+
+      - name: Install Binaryen
+        run: |
+          set -euo pipefail
+          curl -fsSL -o /tmp/binaryen.tar.gz \
+            "https://github.com/WebAssembly/binaryen/releases/download/version_${BINARYEN_VERSION}/binaryen-version_${BINARYEN_VERSION}-x86_64-linux.tar.gz"
+          tar xzf /tmp/binaryen.tar.gz -C /tmp
+          sudo install -m 755 "/tmp/binaryen-version_${BINARYEN_VERSION}/bin/wasm-opt" /usr/local/bin/wasm-opt
+          wasm-opt --version
+
+      - name: Build web export
+        run: ./tools/build_web.sh build/web
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3

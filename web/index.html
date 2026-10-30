@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mindsphere — a local-first sphere mind mapper</title>
+  <meta name="description" content="A local-first sphere mind mapper built with Rust and Bevy. Thoughts live on a globe, connect into constellations, and never leave your device.">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Mindsphere">
+  <meta property="og:description" content="A local-first sphere mind mapper built with Rust and Bevy.">
+  <meta property="og:url" content="https://orbitmechanic.github.io/mindsphere/">
+  <meta property="og:image" content="https://orbitmechanic.github.io/mindsphere/og.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Mindsphere">
+  <meta name="twitter:description" content="A local-first sphere mind mapper built with Rust and Bevy.">
+  <meta name="twitter:image" content="https://orbitmechanic.github.io/mindsphere/og.png">
+  <meta name="theme-color" content="#03060b">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <canvas id="game-canvas" width="1440" height="900" tabindex="0" aria-label="Mindsphere mind mapping canvas"></canvas>
+
+  <div id="loading" class="veil">
+    <div class="orb" aria-hidden="true"><i></i><i></i><i></i></div>
+    <p class="loading-title">MINDSPHERE</p>
+    <p class="loading-note">BOOTING THE SPHERE…</p>
+  </div>
+
+  <input id="mindsphere-import-file" type="file" accept=".json,application/json" aria-label="Import a Mindsphere JSON file" title="Import a .json sphere">
+
+  <noscript><p class="noscript">Mindsphere needs JavaScript and WebGL 2.</p></noscript>
+
+  <script>
+    (() => {
+      const Native = window.AudioContext || window.webkitAudioContext;
+      if (!Native) return;
+      const contexts = [];
+      function Wrapped(...args) {
+        const ctx = new Native(...args);
+        contexts.push(ctx);
+        return ctx;
+      }
+      Wrapped.prototype = Native.prototype;
+      window.AudioContext = Wrapped;
+      if (window.webkitAudioContext) window.webkitAudioContext = Wrapped;
+      const resume = () => contexts.forEach((ctx) => {
+        if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+      });
+      ['pointerdown', 'keydown', 'touchstart'].forEach((event) => {
+        window.addEventListener(event, resume, { capture: true, passive: true });
+      });
+    })();
+
+    window.mindsphereDownload = (name, text) => {
+      const blob = new Blob([text], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1500);
+    };
+
+    // The file input is an invisible overlay exactly on top of the Bevy Import
+    // button. A real DOM click opens the picker with user activation intact.
+    (() => {
+      const input = document.getElementById('mindsphere-import-file');
+      input.addEventListener('change', () => {
+        const file = input.files && input.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+          window.__mindsphereImportText = String(reader.result || '');
+          window.__mindsphereImportNonce = (window.__mindsphereImportNonce || 0) + 1;
+        };
+        reader.readAsText(file);
+        input.value = '';
+      });
+    })();
+  </script>
+
+  <script type="module">
+    import init from './mindsphere.js';
+
+    const canvas = document.getElementById('game-canvas');
+    const loading = document.getElementById('loading');
+
+    function focusCanvas() {
+      canvas.focus({ preventScroll: true });
+      requestAnimationFrame(() => window.scrollTo({ top: 0, left: 0, behavior: 'instant' }));
+    }
+
+    canvas.addEventListener('pointerdown', focusCanvas);
+
+    try {
+      await init();
+      loading.hidden = true;
+      focusCanvas();
+    } catch (err) {
+      console.error(err);
+      loading.innerHTML = '<p class="loading-title">THE SPHERE IS STUCK.</p><p class="loading-note">WebGL 2 is required. Try a current Chrome, Firefox, Edge or Safari.</p>';
+    }
+  </script>
+</body>
+</html>

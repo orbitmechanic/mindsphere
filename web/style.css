@@ -1,0 +1,153 @@
+:root {
+  --bg: #03060b;
+  --ink: #e9eef8;
+  --muted: #93a4bb;
+  --cyan: #59d8e8;
+  --line: #1a2538;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: "Space Grotesk", system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+body {
+  background:
+    radial-gradient(ellipse at 50% -10%, rgba(89, 216, 232, 0.12), transparent 42%),
+    radial-gradient(ellipse at 80% 110%, rgba(120, 80, 220, 0.12), transparent 46%),
+    var(--bg);
+}
+
+#game-canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  outline: none;
+  touch-action: none;
+  cursor: default;
+}
+
+#mindsphere-import-file {
+  position: fixed;
+  left: 16px;
+  bottom: 18px;
+  width: 118px;
+  height: 34px;
+  opacity: 0;
+  cursor: pointer;
+  z-index: 6;
+}
+
+.veil {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background:
+    radial-gradient(ellipse at center, rgba(11, 24, 42, 0.94), rgba(3, 6, 11, 0.99) 68%);
+  text-align: center;
+  padding: 28px;
+}
+
+.veil[hidden] { display: none; }
+
+.veil p { margin: 0; }
+
+.loading-title {
+  color: var(--ink);
+  font-size: clamp(22px, 4vw, 36px);
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  padding-left: 0.22em;
+  text-shadow: 0 0 32px rgba(89, 216, 232, 0.28);
+}
+
+.loading-note {
+  color: var(--muted);
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 10px;
+  letter-spacing: 0.17em;
+}
+
+.orb {
+  position: relative;
+  width: 78px;
+  height: 78px;
+  margin-bottom: 8px;
+  border: 1px solid rgba(89, 216, 232, 0.38);
+  border-radius: 50%;
+  box-shadow: 0 0 42px rgba(89, 216, 232, 0.18), inset 0 0 28px rgba(89, 216, 232, 0.12);
+  animation: breathe 2.4s ease-in-out infinite;
+}
+
+.orb::before,
+.orb::after {
+  content: "";
+  position: absolute;
+  inset: 16px -7px;
+  border: 1px solid rgba(89, 216, 232, 0.24);
+  border-radius: 50%;
+  transform: rotate(24deg);
+}
+
+.orb::after {
+  inset: 7px 16px;
+  transform: rotate(-36deg);
+}
+
+.orb i {
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--cyan);
+  box-shadow: 0 0 16px var(--cyan);
+  animation: blink 1.8s ease-in-out infinite;
+}
+
+.orb i:nth-child(1) { left: 18px; top: 24px; }
+.orb i:nth-child(2) { right: 19px; top: 37px; animation-delay: 0.5s; }
+.orb i:nth-child(3) { left: 36px; bottom: 14px; animation-delay: 1s; }
+
+@keyframes breathe {
+  0%, 100% { transform: scale(1); opacity: 0.9; }
+  50% { transform: scale(1.04); opacity: 1; }
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 0.35; transform: scale(0.85); }
+  50% { opacity: 1; transform: scale(1.15); }
+}
+
+.noscript {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  padding: 24px;
+  background: var(--bg);
+  color: var(--ink);
+  text-align: center;
+  z-index: 30;
+}
+
+@media (max-width: 900px) {
+  #mindsphere-import-file {
+    left: 16px;
+    bottom: 18px;
+  }
+}

@@ -1,0 +1,51 @@
+[package]
+name = "mindsphere"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.97"
+description = "A local-first sphere mind mapper built with Rust and Bevy"
+license = "MIT"
+repository = "https://github.com/orbitmechanic/mindsphere"
+keywords = ["bevy", "mind-map", "local-first", "visualization"]
+categories = ["visualization", "game-engines"]
+
+[dependencies]
+bevy = { version = "0.20.1", features = ["system_clipboard", "keyboard"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+base64 = "0.22"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+dirs = "6"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "=0.2.130"
+js-sys = "0.3"
+web-sys = { version = "0.3", features = [
+    "Window",
+    "Storage",
+    "Navigator",
+    "Clipboard",
+    "Document",
+    "Element",
+    "HtmlElement",
+] }
+
+[profile.dev]
+opt-level = 1
+debug = 0
+
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+
+[profile.wasm-release]
+inherits = "release"
+opt-level = "z"
+lto = "thin"
+codegen-units = 1
+panic = "abort"
+strip = "debuginfo"
