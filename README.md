@@ -63,7 +63,8 @@ The build script uses `wasm-opt` when it is installed and stages only the runtim
 | Search spheres | `Ctrl+F` |
 | Export sphere | `Ctrl+E` |
 | Save now | `Ctrl+S` |
-| Delete selected thought | `Delete` or `Backspace` |
+| Delete selected thoughts | `Delete` or `Backspace` |
+| Submit a dialog | `Enter` |
 | Clear selection / close dialog | `Esc` |
 
 ## Your data

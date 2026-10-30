@@ -119,6 +119,22 @@ pub fn keyboard_shortcuts(
         return;
     }
 
+    if state.modal.is_some() {
+        let submits = matches!(
+            state.modal,
+            Some(ModalKind::NewThought)
+                | Some(ModalKind::AddToGroup)
+                | Some(ModalKind::NewSphere)
+                | Some(ModalKind::RenameSphere)
+                | Some(ModalKind::DeleteSphere)
+                | Some(ModalKind::NewGroup)
+        );
+        if submits && keyboard.just_pressed(KeyCode::Enter) {
+            state.submit_modal();
+        }
+        return;
+    }
+
     if editing {
         return;
     }

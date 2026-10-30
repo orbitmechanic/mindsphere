@@ -25,12 +25,12 @@ use scene::{
 use state::{ActionMessage, AppState, WebImportState};
 use ui::{
     ActionButton, BoardDragState, NodeLabelMap, board_release_drop, ensure_ui_pickable,
-    globe_sliders, ignore_text_picking, rebuild_board, rebuild_globe_panel, rebuild_inspector,
-    rebuild_modal, rebuild_sphere_list, scroll_lists, setup_ui, style_buttons, style_inputs,
-    sync_editor, sync_modal_blocking, sync_modal_input, sync_node_labels, sync_search,
-    sync_slider_value, update_action_buttons, update_console, update_globe_slider_visuals,
-    update_globe_value_labels, update_link_button, update_modes, update_save_indicator,
-    update_stats, update_toast, update_top_labels,
+    focus_modal_input, globe_sliders, ignore_text_picking, rebuild_board, rebuild_globe_panel,
+    rebuild_inspector, rebuild_modal, rebuild_sphere_list, scroll_lists, setup_ui, style_buttons,
+    style_inputs, sync_editor, sync_modal_blocking, sync_modal_input, sync_node_labels,
+    sync_search, sync_slider_value, update_action_buttons, update_console,
+    update_globe_slider_visuals, update_globe_value_labels, update_link_button, update_modes,
+    update_save_indicator, update_stats, update_toast, update_top_labels,
 };
 
 fn main() {
@@ -112,6 +112,7 @@ fn main() {
                 ensure_ui_pickable,
                 ignore_text_picking,
                 globe_sliders,
+                focus_modal_input,
                 update_globe_slider_visuals,
                 update_globe_value_labels,
                 update_action_buttons,

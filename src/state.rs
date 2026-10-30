@@ -494,6 +494,13 @@ impl AppState {
 
     pub fn toggle_multi_select(&mut self) {
         self.multi_select_mode = !self.multi_select_mode;
+        if self.multi_select_mode {
+            self.link_mode = false;
+            self.unlink_mode = false;
+            self.link_chain.clear();
+            self.unlink_source = None;
+            self.unlink_targets.clear();
+        }
         self.ui.toolbar = true;
         if self.multi_select_mode {
             self.set_console(
@@ -510,6 +517,9 @@ impl AppState {
 
     pub fn toggle_link_mode(&mut self) {
         self.link_mode = !self.link_mode;
+        if self.link_mode {
+            self.multi_select_mode = false;
+        }
         self.unlink_mode = false;
         self.unlink_source = None;
         self.unlink_targets.clear();
@@ -612,10 +622,12 @@ impl AppState {
         self.unlink_source = Some(source.clone());
         self.unlink_targets = links;
         self.ui.scene = true;
+        self.ui.board = true;
+        self.ui.inspector = true;
         self.ui.toolbar = true;
         self.set_console(
             "Select the highlighted thought to unlink.",
-            "The linked thoughts are glowing on the sphere.",
+            "The linked thoughts are highlighted on the sphere and board.",
         );
     }
 
@@ -644,6 +656,7 @@ impl AppState {
         self.unlink_targets.clear();
         self.mark_data();
         self.ui.scene = true;
+        self.ui.board = true;
         self.ui.inspector = true;
         self.ui.toolbar = true;
         self.set_console("Link removed.", "Select a thought to continue.");

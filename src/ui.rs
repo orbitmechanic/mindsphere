@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use bevy::input::mouse::{MouseScrollUnit, MouseWheel};
 use bevy::input_focus::tab_navigation::TabIndex;
-use bevy::input_focus::{AutoFocus, InputFocus};
+use bevy::input_focus::{AutoFocus, FocusCause, InputFocus};
 use bevy::picking::events::PointerDragStart;
 use bevy::picking::hover::Hovered;
 use bevy::prelude::*;
@@ -2864,6 +2864,22 @@ pub fn sync_modal_blocking(
         } else {
             Pickable::IGNORE
         };
+    }
+}
+
+pub fn focus_modal_input(
+    state: Res<AppState>,
+    mut focus: ResMut<InputFocus>,
+    inputs: Query<Entity, With<ModalInput>>,
+) {
+    if state.modal.is_none() {
+        return;
+    }
+    let Ok(input) = inputs.single() else {
+        return;
+    };
+    if focus.get() != Some(input) {
+        focus.set(input, FocusCause::Navigated);
     }
 }
 
