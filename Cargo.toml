@@ -10,7 +10,7 @@ keywords = ["bevy", "mind-map", "local-first", "visualization"]
 categories = ["visualization", "game-engines"]
 
 [dependencies]
-bevy = { version = "0.20.1", features = ["system_clipboard", "keyboard"] }
+bevy = { version = "0.20.1", features = ["system_clipboard", "keyboard", "jpeg", "png"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 base64 = "0.22"

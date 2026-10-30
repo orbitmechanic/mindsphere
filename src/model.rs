@@ -67,6 +67,22 @@ fn default_distance() -> f32 {
     8.8
 }
 
+fn default_radius() -> f32 {
+    crate::util::DEFAULT_GLOBE_RADIUS
+}
+
+fn default_skin() -> String {
+    "earth".to_owned()
+}
+
+fn default_transparency() -> f32 {
+    1.0
+}
+
+fn default_background() -> String {
+    "stars".to_owned()
+}
+
 impl Default for CameraData {
     fn default() -> Self {
         Self {
@@ -148,6 +164,14 @@ pub struct Sphere {
     pub updated_at: i64,
     #[serde(default)]
     pub camera: CameraData,
+    #[serde(default = "default_radius")]
+    pub radius: f32,
+    #[serde(default = "default_skin")]
+    pub skin: String,
+    #[serde(default = "default_transparency")]
+    pub transparency: f32,
+    #[serde(default = "default_background")]
+    pub background: String,
     #[serde(default)]
     pub groups: Vec<Group>,
     #[serde(default)]
@@ -173,6 +197,10 @@ impl Sphere {
             created_at: now,
             updated_at: now,
             camera: CameraData::default(),
+            radius: default_radius(),
+            skin: default_skin(),
+            transparency: default_transparency(),
+            background: default_background(),
             groups: Vec::new(),
             nodes: Vec::new(),
             links: Vec::new(),
@@ -202,19 +230,19 @@ impl Sphere {
         let b = sphere.add_thought(
             "Drag a thought",
             &start,
-            spherical(24.0, -22.0),
+            spherical(11.0, -12.0),
             "Drag any orb across the surface. Ideas are allowed to move when your thinking changes.",
         );
         let c = sphere.add_thought(
             "Group related ideas",
             &ways,
-            spherical(-5.0, 20.0),
+            spherical(30.0, 24.0),
             "Give a cluster a name and a colour. Groups become columns in the 2D board.",
         );
         let d = sphere.add_thought(
             "Connect the dots",
             &ways,
-            spherical(22.0, 29.0),
+            spherical(36.0, 31.0),
             "Draw a path between thoughts that lead into one another. Connections work across groups.",
         );
         let e = sphere.add_thought(
@@ -226,19 +254,19 @@ impl Sphere {
         let f = sphere.add_thought(
             "What will you think through?",
             &questions,
-            spherical(-30.0, -18.0),
+            spherical(-30.0, -5.0),
             "Start with a question that matters. Add everything that comes up before you begin to sort it.",
         );
         let g = sphere.add_thought(
             "Your data stays local",
             &local,
-            spherical(35.0, -4.0),
+            spherical(43.0, 2.0),
             "Spheres are plain JSON files on your device. No account, no cloud, no telemetry.",
         );
         let h = sphere.add_thought(
             "Export a snapshot",
             &local,
-            spherical(39.0, 16.0),
+            spherical(48.0, 9.0),
             "Use Export to keep a portable copy of this sphere, or Import to bring one in.",
         );
 
@@ -267,7 +295,15 @@ impl Sphere {
             self.updated_at = self.created_at;
         }
         self.camera.pitch = self.camera.pitch.clamp(-1.2, 1.2);
-        self.camera.distance = self.camera.distance.clamp(5.2, 16.0);
+        self.camera.distance = self.camera.distance.clamp(5.2, 24.0);
+        self.radius = self.radius.clamp(1.8, 5.0);
+        if self.skin.trim().is_empty() {
+            self.skin = default_skin();
+        }
+        self.transparency = self.transparency.clamp(0.15, 1.0);
+        if self.background.trim().is_empty() {
+            self.background = default_background();
+        }
 
         let mut group_ids = HashSet::new();
         for group in &mut self.groups {
@@ -548,6 +584,30 @@ mod tests {
         let copy = sphere.duplicate();
         assert_ne!(sphere.id, copy.id);
         assert_eq!(copy.nodes.len(), sphere.nodes.len());
+    }
+
+    #[test]
+    fn visual_settings_round_trip() {
+        let mut sphere = Sphere::welcome();
+        sphere.radius = 3.4;
+        sphere.skin = "jupiter".to_owned();
+        sphere.transparency = 0.55;
+        sphere.background = "skymap".to_owned();
+        let parsed = parse_sphere(&sphere_json(&sphere)).expect("valid sphere");
+        assert!((parsed.radius - 3.4).abs() < 0.001);
+        assert_eq!(parsed.skin, "jupiter");
+        assert!((parsed.transparency - 0.55).abs() < 0.001);
+        assert_eq!(parsed.background, "skymap");
+    }
+
+    #[test]
+    fn visual_settings_clamp() {
+        let mut sphere = Sphere::welcome();
+        sphere.radius = 99.0;
+        sphere.transparency = -1.0;
+        sphere.normalize();
+        assert_eq!(sphere.radius, 5.0);
+        assert_eq!(sphere.transparency, 0.15);
     }
 
     #[test]

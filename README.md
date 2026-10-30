@@ -11,8 +11,11 @@ Mindsphere has no account system, no cloud dependency, and no telemetry. Spheres
 ## What it does
 
 - **3D sphere view** — orbit, zoom, drag thoughts across the surface, and follow connection paths.
-- **2D board view** — groups become columns, with notes and connections visible at a glance.
+- **Living group outlines** — each group is the union of per-thought radii, so its edge becomes an amorphous blob that follows its members.
+- **Force layout** — thoughts repel to twice their diameter, groups pull toward their surface centroid, and group boundaries repel each other. Links carry no force, so connections never distort the layout.
+- **2D board view** — groups become columns, with notes and connections visible at a glance. Drag column headers to reorder groups and drag cards to reorder thoughts or move them across groups.
 - **Thought inspector** — edit titles and notes, move thoughts between groups, and create connections.
+- **Globe controls** — adjust sphere radius and transparency, choose a planet or procedural skin, switch between a generated starfield and a star skymap, and choose each group's edge colour.
 - **Local library** — create, rename, duplicate, delete, import, and export spheres.
 - **Autosave** — changes are written locally after a short idle delay.
 - **No lock-in** — exported JSON is readable, portable, and easy to back up.
@@ -47,6 +50,9 @@ The build script uses `wasm-opt` when it is installed and stages only the runtim
 | Move a thought | Drag it across the sphere |
 | Edit a thought | Select it, then use the inspector |
 | New thought | `N` or the button in the top bar |
+| Globe settings | **Globe** button in the top bar |
+| Reorder groups | Drag a board column header |
+| Reorder / move thoughts | Drag a board card |
 | Switch sphere / board | `1` / `2` |
 | Search spheres | `Ctrl+F` |
 | Export sphere | `Ctrl+E` |
@@ -72,8 +78,10 @@ Mindsphere is an ECS application, not a scene-tree app with a database bolted on
 
 - `src/model.rs` — serializable sphere, thought, group, and link records plus normalization.
 - `src/state.rs` — the app resource and action vocabulary shared by every system.
-- `src/scene.rs` — globe, thought meshes, labels, gizmo grid, orbit camera, picking, and dragging.
-- `src/ui.rs` — Bevy UI panels, board, inspector, dialogs, and text inputs.
+- `src/scene.rs` — globe, thought meshes, labels, group outlines, orbit camera, picking, and dragging.
+- `src/forces.rs` — thought spacing, group cohesion, and group-boundary repulsion.
+- `src/skins.rs` — planet, exoplanet, pattern, colour, gradient, and star-map skin catalog.
+- `src/ui.rs` — Bevy UI panels, board drag/drop, inspector, sliders, dialogs, and text inputs.
 - `src/storage.rs` — native files, browser `localStorage`, migration, import/export.
 - `src/actions.rs` — action dispatch, shortcuts, web import polling, and drag/drop.
 
@@ -88,6 +96,8 @@ cargo test
 ```
 
 The model tests cover welcome data, link cleanup, duplication, and JSON round-trips.
+
+Planet surface textures are from [Solar System Scope](https://www.solarsystemscope.com/textures/) under CC BY 4.0; see `assets/textures/LICENSE.txt`.
 
 ## License
 

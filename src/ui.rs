@@ -3,13 +3,19 @@ use std::collections::{HashMap, HashSet};
 use bevy::input::mouse::{MouseScrollUnit, MouseWheel};
 use bevy::input_focus::tab_navigation::TabIndex;
 use bevy::input_focus::{AutoFocus, InputFocus};
+use bevy::picking::events::PointerDragStart;
 use bevy::picking::hover::Hovered;
 use bevy::prelude::*;
 use bevy::text::{EditableText, TextCursorStyle};
 use bevy::ui::Pressed;
-use bevy::ui_widgets::{ActivateOnPress, Button, TextInput};
+use bevy::ui_widgets::{
+    ActivateOnPress, Button, Slider, SliderRange, SliderThumb, SliderValue, TextInput, TrackClick,
+    ValueChange,
+};
 
+use crate::model::GROUP_COLORS;
 use crate::scene::OrbitCamera;
+use crate::skins::{BACKGROUNDS, SKINS, background_label, skin_label, skin_swatch};
 use crate::state::{AppAction, AppState, ModalKind, Tone, ViewMode};
 use crate::util::{
     ACCENT, AMBER, BOTTOM_DOCK_H, CORAL, FAINT, INK, LEFT_PANEL_W, LINE, MINT, MUTED, PANEL,
@@ -56,6 +62,22 @@ pub struct BoardColumns;
 
 #[derive(Component)]
 pub struct BoardScroll;
+
+#[derive(Component)]
+pub struct BoardColumn(pub String);
+
+#[derive(Component)]
+pub struct BoardColumnHandle(pub String);
+
+#[derive(Component)]
+pub struct BoardCard(pub String);
+
+#[derive(Resource, Default)]
+pub struct BoardDragState {
+    pub group: Option<String>,
+    pub node: Option<String>,
+    pub entity: Option<Entity>,
+}
 
 #[derive(Component)]
 pub struct InspectorRoot;
@@ -111,6 +133,21 @@ pub struct StatCount(pub StatKind);
 
 #[derive(Component)]
 pub struct ActionButton(pub AppAction);
+
+#[derive(Component)]
+pub struct GlobeRadiusSlider;
+
+#[derive(Component)]
+pub struct GlobeTransparencySlider;
+
+#[derive(Component)]
+pub struct GlobeSliderThumb;
+
+#[derive(Component)]
+pub struct GlobeRadiusValue;
+
+#[derive(Component)]
+pub struct GlobeTransparencyValue;
 
 #[derive(Component, Clone, Copy)]
 pub struct ButtonStyle {
@@ -486,6 +523,15 @@ fn spawn_top_bar(root: &mut ChildSpawnerCommands, fonts: &UiAssets) {
         spawn_button(
             bar,
             fonts,
+            "Globe",
+            ButtonKind::Ghost,
+            AppAction::OpenModal(ModalKind::Globe),
+            Some(64.0),
+            38.0,
+        );
+        spawn_button(
+            bar,
+            fonts,
             "More",
             ButtonKind::Ghost,
             AppAction::More,
@@ -706,6 +752,7 @@ fn spawn_modal(root: &mut ChildSpawnerCommands, fonts: &UiAssets) {
             },
             BackgroundColor(Color::srgb(0.043, 0.075, 0.133)),
             BorderColor::all(Color::srgba(0.10, 0.16, 0.25, 1.0)),
+            ScrollPosition::default(),
             ModalContent,
             Name::new("Modal card"),
         ));
@@ -1418,8 +1465,9 @@ pub fn rebuild_board(
                 return;
             }
             for group in groups {
-                let (name, color, nodes) = match group {
+                let (id, name, color, nodes) = match group {
                     Some(group) => (
+                        group.id.clone(),
                         group.name.clone(),
                         group.color.clone(),
                         sphere
@@ -1429,6 +1477,7 @@ pub fn rebuild_board(
                             .collect::<Vec<_>>(),
                     ),
                     None => (
+                        String::new(),
                         "Unfiled".to_owned(),
                         "#8b95b5".to_owned(),
                         sphere
@@ -1453,15 +1502,34 @@ pub fn rebuild_board(
                             ..default()
                         },
                         BackgroundColor(Color::srgba(0.025, 0.047, 0.08, 0.96)),
-                        BorderColor::all(LINE),
+                        BorderColor::all(alpha(color_from_hex(&color), 0.55)),
+                        BoardColumn(id.clone()),
+                        Pickable::default(),
                     ))
                     .with_children(|column| {
                         column
-                            .spawn(Node {
-                                align_items: AlignItems::Center,
-                                column_gap: px(6.0),
-                                ..default()
-                            })
+                            .spawn((
+                                Node {
+                                    width: percent(100.0),
+                                    min_height: px(24.0),
+                                    align_items: AlignItems::Center,
+                                    column_gap: px(6.0),
+                                    ..default()
+                                },
+                                BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.01)),
+                                ZIndex(2),
+                                Button,
+                                BoardColumnHandle(id.clone()),
+                                Hovered::default(),
+                                Pickable::default(),
+                                UiTransform::default(),
+                                Outline {
+                                    width: px(2.0),
+                                    offset: px(1.0),
+                                    color: Color::NONE,
+                                },
+                            ))
+                            .observe(board_drag_start)
                             .with_children(|head| {
                                 head.spawn((
                                     Node {
@@ -1471,16 +1539,20 @@ pub fn rebuild_board(
                                         ..default()
                                     },
                                     BackgroundColor(color_from_hex(&color)),
+                                    Pickable::IGNORE,
                                 ));
                                 head.spawn((
                                     Text::new(&name),
                                     text_font(&fonts, 11.0, true),
                                     TextColor(INK),
                                 ));
-                                head.spawn(Node {
-                                    flex_grow: 1.0,
-                                    ..default()
-                                });
+                                head.spawn((
+                                    Node {
+                                        flex_grow: 1.0,
+                                        ..default()
+                                    },
+                                    Pickable::IGNORE,
+                                ));
                                 head.spawn((
                                     Text::new(nodes.len().to_string()),
                                     text_font(&fonts, 10.0, false),
@@ -1506,6 +1578,13 @@ pub fn rebuild_board(
                                     Button,
                                     Hovered::default(),
                                     ActionButton(AppAction::SelectNode(node.id.clone())),
+                                    BoardCard(node.id.clone()),
+                                    UiTransform::default(),
+                                    Outline {
+                                        width: px(2.0),
+                                        offset: px(1.0),
+                                        color: Color::NONE,
+                                    },
                                     ButtonStyle {
                                         normal: if is_selected {
                                             Color::srgba(0.09, 0.2, 0.25, 0.5)
@@ -1532,6 +1611,7 @@ pub fn rebuild_board(
                                     }),
                                     BorderColor::all(border),
                                 ))
+                                .observe(board_drag_start)
                                 .with_children(|card| {
                                     card.spawn((
                                         Text::new(&node.title),
@@ -1596,6 +1676,7 @@ pub fn rebuild_modal(
             ModalKind::More => "SPHERE",
             ModalKind::Shortcuts => "REFERENCE",
             ModalKind::About => "ABOUT",
+            ModalKind::Globe => "GLOBE",
             _ => "SPHERE",
         };
         card.spawn((
@@ -1678,6 +1759,75 @@ pub fn rebuild_modal(
                 );
                 modal_buttons(card, &fonts, "Cancel", "Import sphere");
             }
+            ModalKind::Globe => {
+                modal_title(card, &fonts, "Globe settings");
+                modal_hint(
+                    card,
+                    &fonts,
+                    "Change the surface, size, transparency, and star background. The force field keeps thoughts and groups apart as the map changes.",
+                );
+                let Some(sphere) = state.current() else {
+                    return;
+                };
+                section_label(card, &fonts, "SURFACE");
+                modal_hint(
+                    card,
+                    &fonts,
+                    &format!(
+                        "Current surface: {} · {}",
+                        skin_label(&sphere.skin),
+                        background_label(&sphere.background)
+                    ),
+                );
+                modal_slider_row(
+                    card,
+                    &fonts,
+                    "Sphere radius",
+                    1.8,
+                    5.0,
+                    sphere.radius,
+                    GlobeRadiusSlider,
+                    GlobeRadiusValue,
+                );
+                modal_slider_row(
+                    card,
+                    &fonts,
+                    "Transparency",
+                    0.15,
+                    1.0,
+                    sphere.transparency,
+                    GlobeTransparencySlider,
+                    GlobeTransparencyValue,
+                );
+                modal_skin_grid(card, &fonts, &sphere.skin);
+                section_label(card, &fonts, "BACKDROP");
+                card.spawn(Node {
+                    flex_direction: FlexDirection::Row,
+                    column_gap: px(6.0),
+                    ..default()
+                })
+                .with_children(|row| {
+                    for (id, label) in BACKGROUNDS {
+                        let selected = sphere.background == *id;
+                        spawn_choice_button(
+                            row,
+                            &fonts,
+                            label,
+                            selected,
+                            AppAction::SetBackground((*id).to_owned()),
+                        );
+                    }
+                });
+                section_label(card, &fonts, "GROUP EDGE COLOURS");
+                if sphere.groups.is_empty() {
+                    modal_hint(card, &fonts, "Create a group to give this map an edge colour.");
+                } else {
+                    for group in &sphere.groups {
+                        modal_group_palette(card, &fonts, group);
+                    }
+                }
+                modal_buttons_single(card, &fonts, "Close");
+            }
             ModalKind::More => {
                 modal_title(card, &fonts, "Sphere actions");
                 modal_menu_button(card, &fonts, "Rename sphere", AppAction::RenameSphere);
@@ -1732,6 +1882,261 @@ pub fn rebuild_modal(
             }
         }
     });
+}
+
+#[allow(clippy::too_many_arguments)]
+fn modal_slider_row(
+    parent: &mut ChildSpawnerCommands,
+    fonts: &UiAssets,
+    label: &str,
+    min: f32,
+    max: f32,
+    value: f32,
+    slider_marker: impl Component,
+    value_marker: impl Component,
+) {
+    parent
+        .spawn(Node {
+            flex_direction: FlexDirection::Column,
+            row_gap: px(4.0),
+            ..default()
+        })
+        .with_children(|row| {
+            row.spawn(Node {
+                justify_content: JustifyContent::SpaceBetween,
+                ..default()
+            })
+            .with_children(|head| {
+                head.spawn((
+                    Text::new(label),
+                    text_font(fonts, 11.0, false),
+                    TextColor(MUTED),
+                ));
+                head.spawn((
+                    Text::new(if max <= 1.0 {
+                        format!("{:.0}%", value * 100.0)
+                    } else {
+                        format!("{value:.1}")
+                    }),
+                    text_font(fonts, 11.0, true),
+                    TextColor(ACCENT),
+                    value_marker,
+                ));
+            });
+            row.spawn((
+                Node {
+                    width: percent(100.0),
+                    height: px(22.0),
+                    ..default()
+                },
+                Hovered::default(),
+                slider_marker,
+                Slider {
+                    track_click: TrackClick::Snap,
+                    ..default()
+                },
+                SliderValue(value),
+                SliderRange::new(min, max),
+                TabIndex(0),
+            ))
+            .with_children(|slider| {
+                slider.spawn((
+                    Node {
+                        width: percent(100.0),
+                        height: px(5.0),
+                        margin: UiRect::top(px(8.0)),
+                        border_radius: BorderRadius::all(px(3.0)),
+                        ..default()
+                    },
+                    BackgroundColor(Color::srgba(0.08, 0.14, 0.22, 1.0)),
+                ));
+                slider
+                    .spawn(Node {
+                        display: Display::Flex,
+                        position_type: PositionType::Absolute,
+                        left: px(0.0),
+                        right: px(10.0),
+                        top: px(0.0),
+                        bottom: px(0.0),
+                        ..default()
+                    })
+                    .with_child((
+                        Node {
+                            display: Display::Flex,
+                            width: px(10.0),
+                            height: px(10.0),
+                            position_type: PositionType::Absolute,
+                            left: percent(if max > min {
+                                (value - min) / (max - min) * 100.0
+                            } else {
+                                0.0
+                            }),
+                            top: px(6.0),
+                            border_radius: BorderRadius::MAX,
+                            ..default()
+                        },
+                        BackgroundColor(ACCENT),
+                        GlobeSliderThumb,
+                        SliderThumb,
+                    ));
+            });
+        });
+}
+
+fn modal_skin_grid(parent: &mut ChildSpawnerCommands, fonts: &UiAssets, selected: &str) {
+    parent
+        .spawn(Node {
+            flex_direction: FlexDirection::Row,
+            flex_wrap: FlexWrap::Wrap,
+            column_gap: px(5.0),
+            row_gap: px(5.0),
+            ..default()
+        })
+        .with_children(|grid| {
+            for skin in SKINS {
+                let is_selected = skin.id == selected;
+                let border = if is_selected { ACCENT } else { INPUT_LINE };
+                grid.spawn((
+                    Button,
+                    Hovered::default(),
+                    ActionButton(AppAction::SetSkin(skin.id.to_owned())),
+                    ButtonStyle {
+                        normal: if is_selected {
+                            Color::srgba(0.10, 0.24, 0.30, 0.55)
+                        } else {
+                            Color::srgba(0.03, 0.06, 0.10, 0.95)
+                        },
+                        hover: Color::srgba(0.06, 0.12, 0.18, 1.0),
+                        pressed: Color::srgba(0.02, 0.04, 0.07, 1.0),
+                        border,
+                    },
+                    Node {
+                        width: px(160.0),
+                        height: px(30.0),
+                        padding: UiRect::horizontal(px(7.0)),
+                        align_items: AlignItems::Center,
+                        column_gap: px(6.0),
+                        border: px(1.0).all(),
+                        border_radius: BorderRadius::all(px(6.0)),
+                        ..default()
+                    },
+                    BackgroundColor(if is_selected {
+                        Color::srgba(0.10, 0.24, 0.30, 0.55)
+                    } else {
+                        Color::srgba(0.03, 0.06, 0.10, 0.95)
+                    }),
+                    BorderColor::all(border),
+                ))
+                .with_children(|chip| {
+                    chip.spawn((
+                        Node {
+                            width: px(8.0),
+                            height: px(8.0),
+                            border_radius: BorderRadius::MAX,
+                            ..default()
+                        },
+                        BackgroundColor(skin_swatch(skin.id)),
+                    ));
+                    chip.spawn((
+                        Text::new(skin.label),
+                        text_font(fonts, 9.5, false),
+                        TextColor(if is_selected { INK } else { MUTED }),
+                    ));
+                });
+            }
+        });
+}
+
+fn spawn_choice_button(
+    parent: &mut ChildSpawnerCommands,
+    fonts: &UiAssets,
+    label: &str,
+    selected: bool,
+    action: AppAction,
+) {
+    let border = if selected { ACCENT } else { INPUT_LINE };
+    parent
+        .spawn((
+            Button,
+            Hovered::default(),
+            ActionButton(action),
+            ButtonStyle {
+                normal: if selected {
+                    Color::srgba(0.10, 0.24, 0.30, 0.55)
+                } else {
+                    Color::srgba(0.03, 0.06, 0.10, 0.95)
+                },
+                hover: Color::srgba(0.06, 0.12, 0.18, 1.0),
+                pressed: Color::srgba(0.02, 0.04, 0.07, 1.0),
+                border,
+            },
+            Node {
+                height: px(32.0),
+                padding: UiRect::horizontal(px(10.0)),
+                align_items: AlignItems::Center,
+                border: px(1.0).all(),
+                border_radius: BorderRadius::all(px(7.0)),
+                ..default()
+            },
+            BackgroundColor(if selected {
+                Color::srgba(0.10, 0.24, 0.30, 0.55)
+            } else {
+                Color::srgba(0.03, 0.06, 0.10, 0.95)
+            }),
+            BorderColor::all(border),
+        ))
+        .with_child((
+            Text::new(label),
+            text_font(fonts, 10.5, false),
+            TextColor(if selected { INK } else { MUTED }),
+        ));
+}
+
+fn modal_group_palette(
+    parent: &mut ChildSpawnerCommands,
+    fonts: &UiAssets,
+    group: &crate::model::Group,
+) {
+    parent
+        .spawn(Node {
+            align_items: AlignItems::Center,
+            column_gap: px(6.0),
+            ..default()
+        })
+        .with_children(|row| {
+            row.spawn((
+                Text::new(&group.name),
+                text_font(fonts, 10.5, false),
+                TextColor(MUTED),
+            ));
+            row.spawn(Node {
+                flex_grow: 1.0,
+                ..default()
+            });
+            for color in GROUP_COLORS {
+                let selected = group.color == color;
+                row.spawn((
+                    Button,
+                    Hovered::default(),
+                    ActionButton(AppAction::SetGroupColor(group.id.clone(), color.to_owned())),
+                    ButtonStyle {
+                        normal: color_from_hex(color),
+                        hover: color_from_hex(color),
+                        pressed: color_from_hex(color),
+                        border: if selected { Color::WHITE } else { Color::NONE },
+                    },
+                    Node {
+                        width: px(17.0),
+                        height: px(17.0),
+                        border: px(2.0).all(),
+                        border_radius: BorderRadius::MAX,
+                        ..default()
+                    },
+                    BackgroundColor(color_from_hex(color)),
+                    BorderColor::all(if selected { Color::WHITE } else { Color::NONE }),
+                ));
+            }
+        });
 }
 
 fn modal_title(parent: &mut ChildSpawnerCommands, fonts: &UiAssets, text: &str) {
@@ -2101,10 +2506,30 @@ pub fn update_toast(
 pub fn scroll_lists(
     mut wheel: MessageReader<MouseWheel>,
     window: Single<&Window>,
-    mut list: Query<(&mut ScrollPosition, &ComputedNode), With<SphereListScroll>>,
+    state: Res<AppState>,
+    mut list: Query<
+        (&mut ScrollPosition, &ComputedNode),
+        (
+            With<SphereListScroll>,
+            Without<BoardScroll>,
+            Without<ModalContent>,
+        ),
+    >,
     mut board: Query<
         (&mut ScrollPosition, &ComputedNode),
-        (With<BoardScroll>, Without<SphereListScroll>),
+        (
+            With<BoardScroll>,
+            Without<SphereListScroll>,
+            Without<ModalContent>,
+        ),
+    >,
+    mut modal: Query<
+        (&mut ScrollPosition, &ComputedNode),
+        (
+            With<ModalContent>,
+            Without<SphereListScroll>,
+            Without<BoardScroll>,
+        ),
     >,
 ) {
     let Some(cursor) = window.cursor_position() else {
@@ -2121,6 +2546,18 @@ pub fn scroll_lists(
         return;
     }
     let height = window.resolution.height();
+    if state.modal.is_some()
+        && cursor.x > 400.0
+        && cursor.x < window.resolution.width() - 400.0
+        && cursor.y > 64.0
+    {
+        if let Ok((mut position, computed)) = modal.single_mut() {
+            let max = (computed.content_size().y - computed.size().y).max(0.0)
+                * computed.inverse_scale_factor();
+            position.y = (position.y - delta).clamp(0.0, max);
+        }
+        return;
+    }
     if cursor.x < LEFT_PANEL_W && cursor.y > 180.0 && cursor.y < height - 130.0 {
         if let Ok((mut position, computed)) = list.single_mut() {
             let max = (computed.content_size().y - computed.size().y).max(0.0)
@@ -2229,8 +2666,7 @@ pub fn sync_node_labels(
             node.display = Display::None;
             continue;
         };
-        let world =
-            Vec3::from_array(thought.pos) * (crate::util::GLOBE_RADIUS + crate::util::NODE_LIFT);
+        let world = Vec3::from_array(thought.pos) * (sphere.radius + crate::util::NODE_LIFT);
         let normal = world.normalize_or_zero();
         let to_camera = (camera_position - world).normalize_or_zero();
         let facing = normal.dot(to_camera) > 0.035;
@@ -2277,4 +2713,139 @@ fn lighten_ui(color: Color, amount: f32) -> Color {
         (c.blue + (1.0 - c.blue) * amount).min(1.0),
         c.alpha,
     )
+}
+
+pub fn sync_slider_value(value_change: On<ValueChange<f32>>, mut commands: Commands) {
+    commands
+        .entity(value_change.source)
+        .insert(SliderValue(value_change.value));
+}
+
+pub fn globe_sliders(
+    radius: Query<(&SliderValue, &GlobeRadiusSlider), Changed<SliderValue>>,
+    transparency: Query<(&SliderValue, &GlobeTransparencySlider), Changed<SliderValue>>,
+    mut state: ResMut<AppState>,
+) {
+    for (value, _) in &radius {
+        state.set_sphere_radius(value.0);
+    }
+    for (value, _) in &transparency {
+        state.set_sphere_transparency(value.0);
+    }
+}
+
+#[allow(clippy::type_complexity)]
+pub fn update_globe_slider_visuals(
+    sliders: Query<
+        (Entity, &SliderValue, &SliderRange),
+        Or<(With<GlobeRadiusSlider>, With<GlobeTransparencySlider>)>,
+    >,
+    children: Query<&Children>,
+    mut thumbs: Query<&mut Node, With<GlobeSliderThumb>>,
+) {
+    for (entity, value, range) in &sliders {
+        for child in children.iter_descendants(entity) {
+            if let Ok(mut thumb) = thumbs.get_mut(child) {
+                thumb.left = percent(range.thumb_position(value.0) * 100.0);
+            }
+        }
+    }
+}
+
+pub fn update_globe_value_labels(
+    state: Res<AppState>,
+    mut radius: Query<&mut Text, With<GlobeRadiusValue>>,
+    mut transparency: Query<&mut Text, (With<GlobeTransparencyValue>, Without<GlobeRadiusValue>)>,
+) {
+    let Some(sphere) = state.current() else {
+        return;
+    };
+    if let Ok(mut text) = radius.single_mut() {
+        text.0 = format!("{:.1}", sphere.radius);
+    }
+    if let Ok(mut text) = transparency.single_mut() {
+        text.0 = format!("{:.0}%", sphere.transparency * 100.0);
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn board_release_drop(
+    buttons: Res<ButtonInput<MouseButton>>,
+    window: Single<&Window>,
+    mut drag: ResMut<BoardDragState>,
+    mut state: ResMut<AppState>,
+    card_rects: Query<(&BoardCard, &ComputedNode, &UiGlobalTransform)>,
+    column_rects: Query<(&BoardColumn, &ComputedNode, &UiGlobalTransform)>,
+    mut outlines: Query<&mut Outline>,
+) {
+    if !buttons.just_released(MouseButton::Left) || drag.entity.is_none() {
+        return;
+    }
+    let entity = drag.entity;
+    let Some(cursor) = window.cursor_position() else {
+        let _ = &mut drag;
+        return;
+    };
+    let point = cursor * window.scale_factor();
+    let target_card = card_rects
+        .iter()
+        .find(|(_, node, transform)| node.contains_point(**transform, point))
+        .map(|(card, _, _)| card.0.clone());
+    let target_group = column_rects
+        .iter()
+        .find(|(_, node, transform)| node.contains_point(**transform, point))
+        .map(|(column, _, _)| column.0.clone())
+        .or_else(|| {
+            target_card.as_deref().and_then(|card_id| {
+                state
+                    .current()
+                    .and_then(|sphere| sphere.node(card_id))
+                    .map(|node| node.group_id.clone())
+            })
+        });
+    if let Some(group) = drag.group.clone() {
+        if let Some(target_group) = target_group
+            && !target_group.is_empty()
+            && group != target_group
+        {
+            state.reorder_group(&group, &target_group);
+        }
+    } else if let Some(node) = drag.node.clone()
+        && let Some(target_group) = target_group
+    {
+        let after = target_card.filter(|target| *target != node);
+        state.move_node_board(&node, &target_group, after.as_deref());
+    }
+    if let Some(entity) = entity
+        && let Ok(mut outline) = outlines.get_mut(entity)
+    {
+        outline.color = Color::NONE;
+    }
+    drag.group = None;
+    drag.node = None;
+    drag.entity = None;
+}
+
+pub fn board_drag_start(
+    event: On<PointerDragStart>,
+    cards: Query<&BoardCard>,
+    handles: Query<&BoardColumnHandle>,
+    mut drag: ResMut<BoardDragState>,
+    mut outlines: Query<&mut Outline>,
+) {
+    let entity = event.event_target();
+    if let Ok(card) = cards.get(entity) {
+        drag.group = None;
+        drag.node = Some(card.0.clone());
+        drag.entity = Some(entity);
+    } else if let Ok(handle) = handles.get(entity) {
+        drag.node = None;
+        drag.group = Some(handle.0.clone());
+        drag.entity = Some(entity);
+    } else {
+        return;
+    }
+    if let Ok(mut outline) = outlines.get_mut(entity) {
+        outline.color = ACCENT;
+    }
 }

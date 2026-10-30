@@ -1,12 +1,14 @@
 use std::collections::HashMap;
 
+use bevy::camera::visibility::NoFrustumCulling;
 use bevy::input::mouse::{MouseMotion, MouseWheel};
 use bevy::prelude::*;
 
+use crate::skins::SceneTextures;
 use crate::state::{AppState, ViewMode};
 use crate::util::{
-    BOTTOM_DOCK_H, GLOBE_RADIUS, LEFT_PANEL_W, NODE_LIFT, NODE_RADIUS, RIGHT_PANEL_W, TOP_BAR_H,
-    alpha, color_from_hex,
+    BOTTOM_DOCK_H, GROUP_ANGULAR_RADIUS, LEFT_PANEL_W, NODE_LIFT, NODE_RADIUS, RIGHT_PANEL_W,
+    TOP_BAR_H, alpha, color_from_hex,
 };
 
 #[derive(Component)]
@@ -16,11 +18,23 @@ pub struct OrbitCamera;
 pub struct Globe;
 
 #[derive(Component)]
+pub struct SkySphere;
+
+#[derive(Component)]
+pub struct StarfieldRoot;
+
+#[derive(Component)]
 pub struct ThoughtVisual;
 
 #[derive(Resource)]
 pub struct SceneAssets {
     pub node_mesh: Handle<Mesh>,
+}
+
+#[derive(Resource)]
+pub struct GlobeHandles {
+    pub globe_material: Handle<StandardMaterial>,
+    pub sky_material: Handle<StandardMaterial>,
 }
 
 #[derive(Resource, Default)]
@@ -38,26 +52,81 @@ pub fn setup_scene(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    asset_server: Res<AssetServer>,
 ) {
-    let globe_mesh = meshes.add(
-        Sphere::new(GLOBE_RADIUS)
-            .mesh()
-            .ico(6)
-            .expect("valid globe subdivision"),
-    );
+    let textures = SceneTextures::load(&asset_server);
+    let earth = textures.skin("earth");
+    let stars = textures.background("stars");
+    let globe_mesh = meshes.add(Sphere::new(1.0).mesh().uv(96, 48));
     let globe_material = materials.add(StandardMaterial {
-        base_color: Color::srgb(0.027, 0.078, 0.14),
-        metallic: 0.18,
-        perceptual_roughness: 0.62,
-        emissive: Color::srgb(0.005, 0.018, 0.035).to_linear(),
+        base_color: Color::srgba(0.94, 0.96, 0.99, 1.0),
+        base_color_texture: Some(earth),
+        metallic: 0.02,
+        perceptual_roughness: 0.82,
+        emissive: Color::srgb(0.006, 0.012, 0.018).to_linear(),
+        alpha_mode: AlphaMode::Blend,
         ..default()
     });
     commands.spawn((
         Mesh3d(globe_mesh),
-        MeshMaterial3d(globe_material),
+        MeshMaterial3d(globe_material.clone()),
         Transform::from_xyz(0.0, 0.0, 0.0),
         Globe,
     ));
+
+    let sky_mesh = meshes.add(Sphere::new(1.0).mesh().uv(64, 32));
+    let sky_material = materials.add(StandardMaterial {
+        base_color: Color::WHITE,
+        base_color_texture: Some(stars),
+        unlit: true,
+        cull_mode: Some(bevy::render::render_resource::Face::Front),
+        ..default()
+    });
+    commands.spawn((
+        Mesh3d(sky_mesh),
+        MeshMaterial3d(sky_material.clone()),
+        Transform::from_xyz(0.0, 0.0, 0.0).with_scale(Vec3::splat(60.0)),
+        NoFrustumCulling,
+        SkySphere,
+    ));
+
+    let star_mesh = meshes.add(Sphere::new(1.0).mesh().ico(2).expect("star sphere"));
+    let star_materials = [
+        materials.add(StandardMaterial {
+            base_color: Color::srgb(0.95, 0.97, 1.0),
+            unlit: true,
+            ..default()
+        }),
+        materials.add(StandardMaterial {
+            base_color: Color::srgb(0.62, 0.76, 1.0),
+            unlit: true,
+            ..default()
+        }),
+        materials.add(StandardMaterial {
+            base_color: Color::srgb(1.0, 0.84, 0.62),
+            unlit: true,
+            ..default()
+        }),
+    ];
+    let mut rng = SimpleRng::new(0x51A7_2026);
+    commands
+        .spawn((StarfieldRoot, Transform::default(), Visibility::Inherited))
+        .with_children(|parent| {
+            for _ in 0..460 {
+                let z = rng.range(-1.0, 1.0);
+                let angle = rng.range(0.0, std::f32::consts::TAU);
+                let r = (1.0 - z * z).sqrt();
+                let direction = Vec3::new(r * angle.cos(), z, r * angle.sin());
+                let material =
+                    star_materials[rng.next_u32() as usize % star_materials.len()].clone();
+                parent.spawn((
+                    Mesh3d(star_mesh.clone()),
+                    MeshMaterial3d(material),
+                    Transform::from_translation(direction * 45.0)
+                        .with_scale(Vec3::splat(rng.range(0.045, 0.13))),
+                ));
+            }
+        });
 
     commands.spawn((
         Camera3d::default(),
@@ -106,6 +175,45 @@ pub fn setup_scene(
     commands.insert_resource(SceneAssets {
         node_mesh: meshes.add(Sphere::new(NODE_RADIUS).mesh().ico(4).expect("node sphere")),
     });
+    commands.insert_resource(GlobeHandles {
+        globe_material,
+        sky_material,
+    });
+    commands.insert_resource(textures);
+}
+
+pub fn sync_globe(
+    mut state: ResMut<AppState>,
+    textures: Res<SceneTextures>,
+    handles: Res<GlobeHandles>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut globe: Query<&mut Transform, With<Globe>>,
+) {
+    if !state.ui.globe {
+        return;
+    }
+    let Some(sphere) = state.current().cloned() else {
+        return;
+    };
+    state.ui.globe = false;
+    let transparency = sphere.transparency.clamp(0.15, 1.0);
+    let skin = textures.skin(&sphere.skin);
+    let sky = textures.background(&sphere.background);
+    if let Some(mut material) = materials.get_mut(&handles.globe_material) {
+        material.base_color_texture = Some(skin);
+        material.base_color = Color::srgba(0.94, 0.96, 0.99, transparency);
+        material.alpha_mode = if transparency < 0.999 {
+            AlphaMode::Blend
+        } else {
+            AlphaMode::Opaque
+        };
+    }
+    if let Some(mut material) = materials.get_mut(&handles.sky_material) {
+        material.base_color_texture = Some(sky);
+    }
+    for mut transform in &mut globe {
+        transform.scale = Vec3::splat(sphere.radius);
+    }
 }
 
 pub fn update_camera(state: Res<AppState>, mut camera: Query<&mut Transform, With<OrbitCamera>>) {
@@ -155,7 +263,7 @@ pub fn camera_controls(
         && cursor.y < height - BOTTOM_DOCK_H;
 
     if over_scene && wheel_delta.abs() > 0.0 {
-        state.camera_distance = (state.camera_distance - wheel_delta * 0.12).clamp(5.2, 16.0);
+        state.camera_distance = (state.camera_distance - wheel_delta * 0.12).clamp(4.0, 24.0);
         state.mark_dirty();
     }
 
@@ -187,7 +295,10 @@ pub fn camera_controls(
             let origin = ray.origin;
             let direction = *ray.direction;
             let b = origin.dot(direction);
-            let drag_radius = GLOBE_RADIUS + NODE_LIFT;
+            let drag_radius = state
+                .current()
+                .map(|sphere| sphere.radius + NODE_LIFT)
+                .unwrap_or(2.9);
             let c = origin.length_squared() - drag_radius * drag_radius;
             let discriminant = b * b - c;
             if discriminant >= 0.0 {
@@ -220,9 +331,10 @@ fn pick_node(
         return None;
     };
     let sphere = state.current()?;
+    let radius = sphere.radius + NODE_LIFT;
     let mut best: Option<(f32, String)> = None;
     for node in &sphere.nodes {
-        let world = Vec3::from_array(node.pos) * (GLOBE_RADIUS + NODE_LIFT);
+        let world = Vec3::from_array(node.pos) * radius;
         let Ok(screen) = camera.world_to_viewport(camera_transform, world) else {
             continue;
         };
@@ -280,7 +392,7 @@ pub fn sync_scene(
         } else {
             color.to_linear() * 0.28
         };
-        let position = Vec3::from_array(node.pos) * (GLOBE_RADIUS + NODE_LIFT);
+        let position = Vec3::from_array(node.pos) * (sphere.radius + NODE_LIFT);
 
         if let Some(&entity) = map.nodes.get(&node.id) {
             if let Ok((mut transform, material_handle, mut visibility)) = visuals.get_mut(entity) {
@@ -323,7 +435,10 @@ pub fn draw_globe(mut gizmos: Gizmos, state: Res<AppState>) {
     }
     let grid = Color::srgba(0.32, 0.62, 0.88, 0.15);
     let equator = Color::srgba(0.44, 0.82, 1.0, 0.22);
-    let radius = GLOBE_RADIUS + 0.012;
+    let Some(sphere) = state.current() else {
+        return;
+    };
+    let radius = sphere.radius + 0.012;
 
     for lon in (0..12).map(|i| i as f32 * 30.0) {
         let mut points = Vec::with_capacity(65);
@@ -350,10 +465,6 @@ pub fn draw_globe(mut gizmos: Gizmos, state: Res<AppState>) {
         gizmos.linestrip(points, equator);
     }
 
-    let Some(sphere) = state.current() else {
-        return;
-    };
-
     for link in &sphere.links {
         let (Some(a), Some(b)) = (sphere.node(&link.a), sphere.node(&link.b)) else {
             continue;
@@ -370,38 +481,54 @@ pub fn draw_globe(mut gizmos: Gizmos, state: Res<AppState>) {
         let mut points = Vec::with_capacity(25);
         for step in 0..=24 {
             let t = step as f32 / 24.0;
-            let point = a.lerp(b, t).normalize_or_zero() * (GLOBE_RADIUS + 0.075);
+            let point = a.lerp(b, t).normalize_or_zero() * (sphere.radius + 0.075);
             points.push(point);
         }
         gizmos.linestrip(points, color);
     }
 
     for group in &sphere.groups {
-        let nodes: Vec<Vec3> = sphere
+        let mut nodes: Vec<Vec3> = sphere
             .nodes
             .iter()
             .filter(|node| node.group_id == group.id)
-            .map(|node| Vec3::from_array(node.pos))
+            .map(|node| Vec3::from_array(node.pos).normalize_or_zero())
+            .filter(|position| position.length_squared() > 0.5)
             .collect();
-        if nodes.len() < 2 {
+        if nodes.is_empty() {
             continue;
         }
-        let center = nodes
+        nodes.sort_by(|a, b| a.x.total_cmp(&b.x).then(a.y.total_cmp(&b.y)));
+        let theta = GROUP_ANGULAR_RADIUS;
+        let inside_cos = (theta - 0.0035).cos();
+        let outline_radius = sphere.radius + 0.082;
+        let base = color_from_hex(&group.color);
+        let outline_color = alpha(base, 0.72);
+        let samples = 96usize;
+        let circles: Vec<Vec<Vec3>> = nodes
             .iter()
-            .fold(Vec3::ZERO, |acc, value| acc + *value)
-            .normalize_or_zero();
-        if center.length_squared() < 0.5 {
-            continue;
+            .map(|center| circle_on_sphere(*center, theta, samples))
+            .collect();
+        for (index, circle) in circles.iter().enumerate() {
+            let keep: Vec<bool> = circle
+                .iter()
+                .map(|point| {
+                    !circles.iter().enumerate().any(|(other_index, _)| {
+                        other_index != index && point.dot(nodes[other_index]) > inside_cos
+                    })
+                })
+                .collect();
+            for step in 0..samples {
+                let next = (step + 1) % samples;
+                if keep[step] && keep[next] {
+                    gizmos.line(
+                        circle[step] * outline_radius,
+                        circle[next] * outline_radius,
+                        outline_color,
+                    );
+                }
+            }
         }
-        let color = alpha(color_from_hex(&group.color), 0.26);
-        let rotation = Quat::from_rotation_arc(Vec3::Z, center);
-        gizmos
-            .circle(
-                Isometry3d::new(center * (GLOBE_RADIUS + 0.085), rotation),
-                0.42,
-                color,
-            )
-            .resolution(48);
     }
 
     if let Some(id) = state.selected_id.as_deref()
@@ -411,12 +538,54 @@ pub fn draw_globe(mut gizmos: Gizmos, state: Res<AppState>) {
         let rotation = Quat::from_rotation_arc(Vec3::Z, center);
         gizmos
             .circle(
-                Isometry3d::new(center * (GLOBE_RADIUS + NODE_LIFT), rotation),
+                Isometry3d::new(center * (sphere.radius + NODE_LIFT), rotation),
                 NODE_RADIUS * 1.9,
                 Color::srgba(0.55, 0.98, 1.0, 0.8),
             )
             .resolution(40);
     }
+}
+
+struct SimpleRng(u64);
+
+impl SimpleRng {
+    fn new(seed: u64) -> Self {
+        Self(seed)
+    }
+
+    fn next_u32(&mut self) -> u32 {
+        self.0 ^= self.0 << 13;
+        self.0 ^= self.0 >> 7;
+        self.0 ^= self.0 << 17;
+        (self.0 & 0xffff_ffff) as u32
+    }
+
+    fn range(&mut self, min: f32, max: f32) -> f32 {
+        let value = self.next_u32() as f32 / u32::MAX as f32;
+        min + (max - min) * value
+    }
+}
+
+fn circle_on_sphere(center: Vec3, angular_radius: f32, samples: usize) -> Vec<Vec3> {
+    let reference = if center.y.abs() < 0.95 {
+        Vec3::Y
+    } else {
+        Vec3::X
+    };
+    let tangent = reference.cross(center).normalize_or_zero();
+    if tangent.length_squared() < 0.5 {
+        return Vec::new();
+    }
+    let bitangent = center.cross(tangent).normalize_or_zero();
+    let sin_r = angular_radius.sin();
+    let cos_r = angular_radius.cos();
+    (0..samples)
+        .map(|index| {
+            let angle = std::f32::consts::TAU * index as f32 / samples as f32;
+            (center * cos_r + (tangent * angle.cos() + bitangent * angle.sin()) * sin_r)
+                .normalize_or_zero()
+        })
+        .collect()
 }
 
 fn spherical_vec(lat_deg: f32, lon_deg: f32) -> Vec3 {

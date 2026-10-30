@@ -47,6 +47,7 @@ echo "==> staging static shell and runtime assets"
 cp "$ROOT/web/index.html" "$ROOT/web/style.css" "$ROOT/web/favicon.svg" "$DIST/"
 mkdir -p "$DIST/assets"
 cp -R "$ROOT/assets/fonts" "$DIST/assets/fonts"
+cp -R "$ROOT/assets/textures" "$DIST/assets/textures"
 touch "$DIST/.nojekyll"
 
 echo

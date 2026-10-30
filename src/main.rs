@@ -1,8 +1,10 @@
 mod actions;
 #[cfg(not(target_arch = "wasm32"))]
 mod capture;
+mod forces;
 mod model;
 mod scene;
+mod skins;
 mod state;
 mod storage;
 mod ui;
@@ -15,16 +17,19 @@ use bevy::ui_widgets::Activate;
 use bevy::window::{MonitorSelection, WindowMode, WindowResolution};
 
 use actions::{autosave, handle_actions, keyboard_shortcuts, poll_web_import};
+use forces::{ForceState, simulate};
 use scene::{
-    DragState, SceneMap, camera_controls, draw_globe, setup_scene, sync_scene, update_camera,
+    DragState, SceneMap, camera_controls, draw_globe, setup_scene, sync_globe, sync_scene,
+    update_camera,
 };
 use state::{ActionMessage, AppState, WebImportState};
 use ui::{
-    ActionButton, NodeLabelMap, ensure_ui_pickable, ignore_text_picking, rebuild_board,
-    rebuild_inspector, rebuild_modal, rebuild_sphere_list, scroll_lists, setup_ui, style_buttons,
-    style_inputs, sync_editor, sync_modal_blocking, sync_modal_input, sync_node_labels,
-    sync_search, update_modes, update_save_indicator, update_stats, update_toast,
-    update_top_labels,
+    ActionButton, BoardDragState, NodeLabelMap, board_release_drop, ensure_ui_pickable,
+    globe_sliders, ignore_text_picking, rebuild_board, rebuild_inspector, rebuild_modal,
+    rebuild_sphere_list, scroll_lists, setup_ui, style_buttons, style_inputs, sync_editor,
+    sync_modal_blocking, sync_modal_input, sync_node_labels, sync_search, sync_slider_value,
+    update_globe_slider_visuals, update_globe_value_labels, update_modes, update_save_indicator,
+    update_stats, update_toast, update_top_labels,
 };
 
 fn main() {
@@ -36,7 +41,9 @@ fn main() {
         .init_resource::<WebImportState>()
         .init_resource::<DragState>()
         .init_resource::<SceneMap>()
+        .init_resource::<ForceState>()
         .init_resource::<NodeLabelMap>()
+        .init_resource::<BoardDragState>()
         .add_plugins(
             DefaultPlugins
                 .set(WindowPlugin {
@@ -64,11 +71,14 @@ fn main() {
         .add_plugins(TabNavigationPlugin)
         .add_message::<ActionMessage>()
         .add_observer(on_activate)
+        .add_observer(sync_slider_value)
         .add_systems(Startup, (setup_scene, setup_ui).chain())
+        .add_systems(FixedUpdate, simulate)
         .add_systems(
             Update,
             (
                 handle_actions,
+                board_release_drop,
                 keyboard_shortcuts,
                 sync_search,
                 sync_editor,
@@ -86,6 +96,7 @@ fn main() {
                 rebuild_modal,
                 camera_controls,
                 update_camera,
+                sync_globe,
                 sync_scene,
                 sync_node_labels,
                 draw_globe,
@@ -97,6 +108,9 @@ fn main() {
             (
                 ensure_ui_pickable,
                 ignore_text_picking,
+                globe_sliders,
+                update_globe_slider_visuals,
+                update_globe_value_labels,
                 style_buttons,
                 style_inputs,
                 sync_modal_blocking,

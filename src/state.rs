@@ -28,6 +28,7 @@ pub enum ModalKind {
     More,
     Shortcuts,
     About,
+    Globe,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -60,6 +61,7 @@ pub struct UiDirty {
     pub inspector: bool,
     pub board: bool,
     pub scene: bool,
+    pub globe: bool,
     pub toolbar: bool,
 }
 
@@ -83,6 +85,7 @@ pub struct AppState {
     pub camera_distance: f32,
     pub editor_title: String,
     pub editor_body: String,
+    pub sim_active: bool,
 }
 
 impl AppState {
@@ -128,6 +131,7 @@ impl AppState {
                 inspector: true,
                 board: true,
                 scene: true,
+                globe: true,
                 toolbar: true,
             },
             camera_yaw: camera.yaw.to_radians(),
@@ -135,6 +139,7 @@ impl AppState {
             camera_distance: camera.distance,
             editor_title: String::new(),
             editor_body: String::new(),
+            sim_active: true,
         };
         state.editor_mirror_from_selection();
         state.settings.last_sphere = state.current_id.clone();
@@ -317,8 +322,125 @@ impl AppState {
                 node.pos = [normalized.x, normalized.y, normalized.z];
                 self.mark_dirty();
                 self.ui.scene = true;
+                self.sim_active = true;
             }
         }
+    }
+
+    pub fn set_sphere_radius(&mut self, radius: f32) {
+        let Some(sphere) = self.current_mut() else {
+            return;
+        };
+        let old = sphere.radius.max(0.1);
+        let new = radius.clamp(1.8, 5.0);
+        if (old - new).abs() < 0.0001 {
+            return;
+        }
+        sphere.radius = new;
+        self.camera_distance = (self.camera_distance * (new / old)).clamp(4.0, 24.0);
+        self.mark_data();
+        self.ui.scene = true;
+        self.ui.globe = true;
+        self.sim_active = true;
+    }
+
+    pub fn set_sphere_transparency(&mut self, transparency: f32) {
+        let Some(sphere) = self.current_mut() else {
+            return;
+        };
+        let value = transparency.clamp(0.15, 1.0);
+        if (sphere.transparency - value).abs() < 0.0001 {
+            return;
+        }
+        sphere.transparency = value;
+        self.mark_dirty();
+        self.ui.globe = true;
+    }
+
+    pub fn set_skin(&mut self, skin: &str) {
+        let Some(sphere) = self.current_mut() else {
+            return;
+        };
+        if sphere.skin == skin {
+            return;
+        }
+        sphere.skin = skin.to_owned();
+        self.mark_dirty();
+        self.ui.globe = true;
+    }
+
+    pub fn set_background(&mut self, background: &str) {
+        let Some(sphere) = self.current_mut() else {
+            return;
+        };
+        if sphere.background == background {
+            return;
+        }
+        sphere.background = background.to_owned();
+        self.mark_dirty();
+        self.ui.globe = true;
+    }
+
+    pub fn set_group_color(&mut self, group_id: &str, color: &str) {
+        let Some(sphere) = self.current_mut() else {
+            return;
+        };
+        let Some(group) = sphere.groups.iter_mut().find(|group| group.id == group_id) else {
+            return;
+        };
+        if group.color == color {
+            return;
+        }
+        group.color = color.to_owned();
+        self.mark_data();
+        self.ui.scene = true;
+        self.ui.board = true;
+        self.ui.inspector = true;
+    }
+
+    pub fn reorder_group(&mut self, from: &str, to: &str) {
+        let Some(sphere) = self.current_mut() else {
+            return;
+        };
+        let Some(from_idx) = sphere.groups.iter().position(|group| group.id == from) else {
+            return;
+        };
+        let Some(to_idx) = sphere.groups.iter().position(|group| group.id == to) else {
+            return;
+        };
+        if from_idx == to_idx {
+            return;
+        }
+        let group = sphere.groups.remove(from_idx);
+        sphere.groups.insert(to_idx.min(sphere.groups.len()), group);
+        self.mark_data();
+        self.ui.board = true;
+        self.ui.inspector = true;
+    }
+
+    pub fn move_node_board(&mut self, node_id: &str, target_group: &str, after_node: Option<&str>) {
+        let Some(sphere) = self.current_mut() else {
+            return;
+        };
+        let Some(node_idx) = sphere.nodes.iter().position(|node| node.id == node_id) else {
+            return;
+        };
+        let mut node = sphere.nodes.remove(node_idx);
+        node.group_id = target_group.to_owned();
+        let insert_at = after_node
+            .and_then(|after| {
+                sphere
+                    .nodes
+                    .iter()
+                    .position(|n| n.id == after)
+                    .map(|i| i + 1)
+            })
+            .unwrap_or(sphere.nodes.len());
+        sphere.nodes.insert(insert_at.min(sphere.nodes.len()), node);
+        self.mark_data();
+        self.ui.scene = true;
+        self.ui.board = true;
+        self.ui.inspector = true;
     }
 
     pub fn new_sphere(&mut self, title: &str) {
@@ -458,6 +580,7 @@ impl AppState {
         self.ui.list = true;
         self.ui.board = true;
         self.ui.toolbar = true;
+        self.sim_active = true;
     }
 
     pub fn mark_all(&mut self) {
@@ -466,7 +589,9 @@ impl AppState {
         self.ui.inspector = true;
         self.ui.board = true;
         self.ui.scene = true;
+        self.ui.globe = true;
         self.ui.toolbar = true;
+        self.sim_active = true;
     }
 
     pub fn editor_mirror_from_selection(&mut self) {
@@ -511,7 +636,7 @@ impl AppState {
             ModalKind::DeleteSphere => self.delete_current(),
             ModalKind::NewGroup => self.new_group(&input),
             ModalKind::Import => self.import_text(&input),
-            ModalKind::More | ModalKind::Shortcuts | ModalKind::About => {}
+            ModalKind::More | ModalKind::Shortcuts | ModalKind::About | ModalKind::Globe => {}
         }
         self.close_modal();
     }
@@ -565,6 +690,9 @@ pub enum AppAction {
     MoveToGroup(String),
     ConnectTo(String),
     OpenLink(String),
+    SetSkin(String),
+    SetBackground(String),
+    SetGroupColor(String, String),
 }
 
 #[derive(Message, Clone, Debug)]

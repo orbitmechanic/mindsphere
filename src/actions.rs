@@ -45,6 +45,18 @@ pub fn handle_actions(mut reader: MessageReader<ActionMessage>, mut state: ResMu
             AppAction::MoveToGroup(group_id) => state.move_selected_to_group(&group_id),
             AppAction::ConnectTo(node_id) => state.connect_selected_to(&node_id),
             AppAction::OpenLink(url) => open_link(&url),
+            AppAction::SetSkin(skin) => {
+                state.set_skin(&skin);
+                state.modal_rev = state.modal_rev.wrapping_add(1);
+            }
+            AppAction::SetBackground(background) => {
+                state.set_background(&background);
+                state.modal_rev = state.modal_rev.wrapping_add(1);
+            }
+            AppAction::SetGroupColor(group, color) => {
+                state.set_group_color(&group, &color);
+                state.modal_rev = state.modal_rev.wrapping_add(1);
+            }
         }
     }
 }

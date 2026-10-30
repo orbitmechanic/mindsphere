@@ -1,0 +1,17 @@
+Planet surface textures
+=======================
+
+Earth (muted derivative), Mercury, Venus, Mars, Jupiter, Saturn, Uranus,
+Neptune, and Moon textures are from Solar System Scope:
+https://www.solarsystemscope.com/textures/
+
+They are licensed under the Creative Commons Attribution 4.0 International
+License (CC BY 4.0):
+https://creativecommons.org/licenses/by/4.0/
+
+The Earth texture was resized and colour-muted for Mindsphere. The other
+textures were resized.
+
+All other textures in this folder (Pluto, the exoplanets, geodesic pattern,
+solid colours, gradients, and star maps) are procedurally generated for
+Mindsphere and are released under the project's MIT license.
